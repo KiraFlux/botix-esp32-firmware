@@ -90,13 +90,13 @@ void setup() {
         logger.error("Left motor init fail");
         return;
     }
-    left_motor.set(0);
+    left_motor.stop();
 
     if (not right_motor.init()) {
         logger.error("Right motor init fail");
         return;
     }
-    right_motor.set(0);
+    right_motor.stop();
 
     auto &e{EspNow::instance()};
 

@@ -34,14 +34,19 @@ struct DRV8871 final : kf::drivers::actuators::Actuator<DRV8871<PwmOutputImpl>, 
         kf::mixin::Configurable<Config>(config),
         _pin_forward{std::move(forward)}, _pin_backward{std::move(backward)} {}
 
-    void set(Config::InputType value) {
-        if (value >= 0) {
-            _pin_forward.write(calcDuty(value, this->config().forward_dead_zone, _pin_forward));
-            _pin_backward.write(0);
-        } else {
+    void set(Config::InputType value) noexcept {
+        if (value < 0) {
             _pin_forward.write(0);
             _pin_backward.write(calcDuty(-value, this->config().backward_dead_zone, _pin_backward));
+        } else {
+            _pin_forward.write(calcDuty(value, this->config().forward_dead_zone, _pin_forward));
+            _pin_backward.write(0);
         }
+    }
+
+    void stop() noexcept {
+        _pin_forward.write(0);
+        _pin_backward.write(0);
     }
 
 private:
