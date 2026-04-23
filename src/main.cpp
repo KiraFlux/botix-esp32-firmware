@@ -2,61 +2,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <Arduino.h>
-#include <WiFi.h>
-#include <esp_now.h>
 
 #include <kf/Logger.hpp>
 #include <kf/Option.hpp>
-#include <kf/gpio/arduino.hpp>
 #include <kf/math/Timer.hpp>
 #include <kf/math/units.hpp>
-#include <kf/network/EspNow.hpp>
 
-#include "botix/drivers/DRV8871.hpp"
-
-using kf::network::EspNow;
-using PwmOutput = kf::gpio::arduino::PwmOutput;
-
-using DRV8871 = botix::drivers::DRV8871<PwmOutput>;
+#include "botix/Periphery.hpp"
 
 struct ControlPacket {
     kf::i16 left_x, left_y, right_x, right_y;
 };
 
-constexpr PwmOutput::Config makePwmConfig(gpio_num_t pin, kf::u8 channel) noexcept {
-    return PwmOutput::Config{
-        .frequency_hz = 20000,
-        .resolution_bits = 8,
-        .pin = static_cast<kf::u8>(pin),
-        .channel = channel,
-    };
-}
+static auto periphery_config{botix::Periphery::Config::defaults()};
 
-static auto left_motor_forward_config{makePwmConfig(GPIO_NUM_32, 0)};
-static auto left_motor_backward_config{makePwmConfig(GPIO_NUM_33, 1)};
-
-static auto right_motor_forward_config{makePwmConfig(GPIO_NUM_25, 2)};
-static auto right_motor_backward_config{makePwmConfig(GPIO_NUM_26, 3)};
-
-DRV8871::Config motor_config{
-    .max_input = 1000,
-    .forward_dead_zone = 10,
-    .backward_dead_zone = 10,
+static botix::Periphery periphery{
+    periphery_config,
 };
 
-DRV8871 left_motor{
-    motor_config,
-    PwmOutput{left_motor_forward_config},
-    PwmOutput{left_motor_backward_config},
-};
-
-DRV8871 right_motor{
-    motor_config,
-    PwmOutput{right_motor_forward_config},
-    PwmOutput{right_motor_backward_config},
-};
-
-kf::Option<EspNow::Peer> broadcast_peer{};
+kf::Option<botix::EspNow::Peer> broadcast_peer{};
 
 kf::math::Timer heartbeat_timer{static_cast<kf::math::Milliseconds>(1000)};
 kf::math::Timer control_update_timer{static_cast<kf::math::Milliseconds>(100)};
@@ -66,7 +30,7 @@ volatile bool got_packet{false};
 int current_left_input = 0;
 int current_right_input = 0;
 
-void onDataRecv(const EspNow::Mac &mac, kf::memory::Slice<const kf::u8> buffer) {
+void onDataRecv(const botix::EspNow::Mac &mac, kf::memory::Slice<const kf::u8> buffer) {
     got_packet = true;
 
     if (buffer.size() == sizeof(ControlPacket)) {
@@ -86,19 +50,15 @@ void setup() {
 
     logger.debug("starting");
 
-    if (not left_motor.init()) {
-        logger.error("Left motor init fail");
+    if (not periphery.init()) {
+        logger.error("Periphery init failed");
         return;
     }
-    left_motor.stop();
 
-    if (not right_motor.init()) {
-        logger.error("Right motor init fail");
-        return;
-    }
-    right_motor.stop();
+    periphery.left_motor.stop();
+    periphery.right_motor.stop();
 
-    auto &e{EspNow::instance()};
+    auto &e{botix::EspNow::instance()};
 
     const auto init_result{e.init()};
     if (init_result.isError()) {
@@ -108,7 +68,7 @@ void setup() {
 
     (void) e.onReceiveFromUnknown(onDataRecv);
 
-    auto peer_result{EspNow::Peer::add(EspNow::Mac{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})};
+    auto peer_result{botix::EspNow::Peer::add(botix::EspNow::Mac{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF})};
     if (peer_result.isOk()) {
         broadcast_peer.value(std::move(peer_result.value()));
     } else {
@@ -136,8 +96,8 @@ void loop() {
     if (control_update_timer.expired(now)) {
         control_update_timer.start(now);
 
-        left_motor.set(current_left_input);
-        right_motor.set(current_right_input);
+        periphery.left_motor.set(current_left_input);
+        periphery.right_motor.set(current_right_input);
     }
 
     if (got_packet) {
