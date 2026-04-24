@@ -30,8 +30,6 @@ struct DualPhaseIncrementalEncoderConfig {
     kf::u8 pin_phase_a;
     kf::u8 pin_phase_b;
 
-    constexpr StepType step() const noexcept { return static_cast<kf::math::Millimeters>(positive_direction); }
-
     [[nodiscard]] constexpr kf::math::Millimeters millimetersFromTicks(TickType ticks) const noexcept {
         return static_cast<kf::math::Millimeters>(ticks) * mm_per_tick;
     }
@@ -67,15 +65,38 @@ struct DualPhaseIncrementalEncoder final
 
 private:
     volatile Config::TickType _position{0};
+    volatile int _last_state{0};
 
     static void IRAM_ATTR isrHandler(void *args) {
-        auto &self = *static_cast<DualPhaseIncrementalEncoder *>(args);
+        static const Config::StepType increment_table[16]{
+            0, //  0
+            +1,//  1
+            -1,//  2
+            0, //  3
 
-        if (digitalRead(self.config().pin_phase_b)) {
-            self._position += self.config().step();
-        } else {
-            self._position -= self.config().step();
-        }
+            -1,//  4
+            0, //  5
+            0, //  6
+            +1,//  7
+
+            +1,//  8
+            0, //  9
+            0, // 10
+            -1,// 11
+
+            0, // 12
+            -1,// 13
+            +1,// 14
+            0, // 15
+        };
+
+        auto &self = *static_cast<DualPhaseIncrementalEncoder *>(args);
+        const auto &config = self.config();
+        
+        const auto current_state{digitalRead(config.pin_phase_b) | (digitalRead(config.pin_phase_a) << 1)};
+
+        self._position += increment_table[(current_state | (self._last_state << 2)) & 0xf] * static_cast<Config::StepType>(config.positive_direction);
+        self._last_state = current_state;
     }
 
     // impl
@@ -84,14 +105,18 @@ private:
     KF_IMPL_INITABLE(This, void);
     void initImpl() noexcept {
         pinMode(this->config().pin_phase_a, INPUT);
-        pinMode(this->config().pin_phase_b, INPUT);
+        attachInterruptArg(digitalPinToInterrupt(this->config().pin_phase_a), isrHandler, static_cast<void *>(this), CHANGE);
 
-        attachInterruptArg(digitalPinToInterrupt(this->config().pin_phase_a), isrHandler, static_cast<void *>(this), RISING);
+        pinMode(this->config().pin_phase_b, INPUT);
+        attachInterruptArg(digitalPinToInterrupt(this->config().pin_phase_b), isrHandler, static_cast<void *>(this), CHANGE);
+
+        this->reset();
     }
 
     KF_IMPL_RESETTABLE(This);
     void resetImpl() noexcept {
         _position = 0;
+        _last_state = (digitalRead(config().pin_phase_a) << 1) | digitalRead(config().pin_phase_b);
     }
 };
 
