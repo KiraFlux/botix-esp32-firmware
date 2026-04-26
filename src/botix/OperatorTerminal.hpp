@@ -16,6 +16,74 @@
 
 namespace botix {
 
+namespace internal {
+
+/// @brief Sub-service that translates incoming control packets into motor PWM values
+/// @details It implements differential mixing (tank drive) from the four joystick axes,
+///          updates motors at a fixed rate, and enforces a safety timeout.
+struct Control final :
+
+    ::kf::mixin::NonCopyable,
+    ::kf::mixin::TimedPollable<Control>
+
+{
+
+    /// @brief Raw data received from the remote controller
+    struct Input {
+        using ValueType = kf::i16;
+
+        ValueType left_x, left_y, right_x, right_y;
+    };
+
+    explicit Control(Periphery &periphery) noexcept : _periphery{periphery} {}
+
+    void input(const Input &input) noexcept {
+        _got_packet = true;
+        // tank mixing
+        _motor_left_set = input.left_y + input.left_x;
+        _motor_right_set = input.left_y - input.left_x;
+    }
+
+private:
+    Periphery &_periphery;
+
+    /// @brief Timer that fires at 100 Hz to write the latest setpoints to the motor drivers
+    kf::math::Timer _update_timer{static_cast<kf::math::Milliseconds>(100)};
+
+    /// @brief Safety timer: if no fresh control packet arrives within 1 s, motors are zeroed
+    kf::math::Timer _timeout_timer{static_cast<kf::math::Milliseconds>(1000)};
+
+    Input::ValueType _motor_left_set{}, _motor_right_set{};
+    bool _need_reset_update_timer{true};
+    volatile bool _got_packet{false};
+
+    // impl
+    using This = Control;
+
+    KF_IMPL_TIMED_POLLABLE(This);
+    void pollImpl(kf::math::Milliseconds now) noexcept {
+        if (_got_packet) {
+            _timeout_timer.start(now);
+            _got_packet = false;
+        }
+
+        if (_timeout_timer.expired(now)) {
+            _motor_left_set = 0;
+            _motor_right_set = 0;
+        }
+
+        if (_update_timer.expired(now) or _need_reset_update_timer) {
+            _update_timer.start(now);
+            _need_reset_update_timer = false;
+
+            _periphery.motor_driver_left.set(_motor_left_set);
+            _periphery.motor_driver_right.set(_motor_right_set);
+        }
+    }
+};
+
+}// namespace internal
+
 /// @brief Permanent ESP‑NOW service for interactive robot control and telemetry.
 /// @details Lets an operator drive, monitor, and tweak the robot in real time
 struct OperatorTerminal final :
@@ -25,70 +93,14 @@ struct OperatorTerminal final :
     ::kf::mixin::TimedPollable<OperatorTerminal>
 
 {
-
-    using EspNow = ::kf::network::EspNow;
-
-    /// @brief Sub-service that translates incoming control packets into motor PWM values
-    /// @details It implements differential mixing (tank drive) from the four joystick axes,
-    ///          updates motors at a fixed rate, and enforces a safety timeout.
-    struct Control final : ::kf::mixin::NonCopyable, ::kf::mixin::TimedPollable<Control> {
-
-        /// @brief Raw data received from the remote controller
-        struct Input {
-            using ValueType = kf::i16;
-
-            ValueType left_x, left_y, right_x, right_y;
-        };
-
-        explicit Control(Periphery &periphery) noexcept : _periphery{periphery} {}
-
-        void input(const Input &input) noexcept {
-            _got_packet = true;
-            // tank mixing
-            _motor_left_set = input.left_y + input.left_x;
-            _motor_right_set = input.left_y - input.left_x;
-        }
-
-    private:
-        Periphery &_periphery;
-
-        kf::math::Timer _update_timer{static_cast<kf::math::Milliseconds>(100)};  ///< Timer that fires at 100 Hz to write the latest setpoints to the motor drivers
-        kf::math::Timer _timeout_timer{static_cast<kf::math::Milliseconds>(1000)};///< Safety timer: if no fresh control packet arrives within 1 s, motors are zeroed
-        Input::ValueType _motor_left_set{}, _motor_right_set{};
-        bool _need_reset_update_timer{true};
-        volatile bool _got_packet{false};
-
-        // impl
-        using This = Control;
-
-        KF_IMPL_TIMED_POLLABLE(This);
-        void pollImpl(kf::math::Milliseconds now) noexcept {
-            if (_got_packet) {
-                _timeout_timer.start(now);
-                _got_packet = false;
-            }
-
-            if (_timeout_timer.expired(now)) {
-                _motor_left_set = 0;
-                _motor_right_set = 0;
-            }
-
-            if (_update_timer.expired(now) or _need_reset_update_timer) {
-                _update_timer.start(now);
-                _need_reset_update_timer = false;
-
-                _periphery.motor_driver_left.set(_motor_left_set);
-                _periphery.motor_driver_right.set(_motor_right_set);
-            }
-        }
-    };
-
     explicit OperatorTerminal(Periphery &periphery) noexcept : _control{periphery} {}
 
 private:
+    using EspNow = ::kf::network::EspNow;
+
     static constexpr auto logger{kf::Logger::create("OperatorTerminal")};
 
-    Control _control;
+    internal::Control _control;
     kf::Option<EspNow::Peer> _broadcast_peer{};
     kf::math::Timer _heartbeat_timer{static_cast<kf::math::Milliseconds>(1000)};
     bool _need_reset_heartbeat_timer{true};
@@ -108,8 +120,8 @@ private:
 
         (void) espnow.onReceiveFromUnknown([this](const EspNow::Mac &mac, kf::memory::Slice<const kf::u8> buffer) -> void {
             switch (buffer.size()) {
-                case sizeof(Control::Input):
-                    _control.input(*reinterpret_cast<const Control::Input *>(buffer.data()));
+                case sizeof(internal::Control::Input):
+                    _control.input(*reinterpret_cast<const internal::Control::Input *>(buffer.data()));
                     return;
 
                 default:
