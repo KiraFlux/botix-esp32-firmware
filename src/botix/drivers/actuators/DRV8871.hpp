@@ -14,31 +14,41 @@ namespace botix::drivers::actuators {
 
 namespace internal {
 
+/// @brief Configuration for the DRV8871 motor driver
 struct DRV8871Config {
-    using DutyType = kf::u16;
-    using InputType = kf::i16;
+    using DutyType = kf::u16; ///< PWM duty cycle type (0..maxDuty)
+    using InputType = kf::i16;///< Signed input command type
 
-    InputType max_input;
-    DutyType forward_dead_zone, backward_dead_zone;
+    InputType max_input;        ///< Maximum absolute input value (e.g., 1000)
+    DutyType forward_dead_zone; ///< Minimum PWM duty to start moving forward
+    DutyType backward_dead_zone;///< Minimum PWM duty to start moving backward
 };
 
 }// namespace internal
 
+/// @brief DRV8871 H-bridge motor driver abstraction
+/// @tparam I PWM output implementation type
 template<typename I> struct DRV8871 final :
 
-    kf::drivers::actuators::Actuator<DRV8871<I>, bool>,
-    kf::mixin::Configurable<internal::DRV8871Config>
+    ::kf::drivers::actuators::Actuator<DRV8871<I>, bool>,
+    ::kf::mixin::Configurable<internal::DRV8871Config>
 
 {
+
     KF_CHECK_IMPL(I, ::kf::gpio::PwmOutputTag);
 
     using PwmOutputImpl = I;
     using Config = internal::DRV8871Config;
 
+    /// @param config Driver configuration (dead zones, max input)
+    /// @param forward PWM output for forward rotation
+    /// @param backward PWM output for backward rotation
     explicit DRV8871(const Config &config, PwmOutputImpl &&forward, PwmOutputImpl &&backward) noexcept :
-        kf::mixin::Configurable<Config>(config),
+        ::kf::mixin::Configurable<Config>(config),
         _pin_forward{std::move(forward)}, _pin_backward{std::move(backward)} {}
 
+    /// @brief Set motor speed and direction
+    /// @param value Signed input command (-max_input .. +max_input)
     void set(Config::InputType value) noexcept {
         if (value < 0) {
             _pin_forward.write(0);
@@ -49,6 +59,7 @@ template<typename I> struct DRV8871 final :
         }
     }
 
+    /// @brief Stop the motor (both outputs driven low)
     void stop() noexcept {
         _pin_forward.write(0);
         _pin_backward.write(0);
@@ -57,12 +68,15 @@ template<typename I> struct DRV8871 final :
 private:
     PwmOutputImpl _pin_forward, _pin_backward;
 
+    /// @brief Map speed command to PWM duty cycle respecting dead zone
     Config::DutyType calcDuty(Config::InputType value, Config::DutyType dead_zone, const PwmOutputImpl &pwm_output) const noexcept {
-        return kf::linearMap<Config::DutyType>(kf::clamp(value, static_cast<Config::InputType>(0), this->config().max_input), 0, this->config().max_input, dead_zone, pwm_output.config().maxDuty());
+        return kf::linearMap<Config::DutyType>(
+            kf::clamp(value, static_cast<Config::InputType>(0), this->config().max_input),
+            0, this->config().max_input,
+            dead_zone, pwm_output.config().maxDuty());
     }
 
     // impl
-
     using This = DRV8871<PwmOutputImpl>;
 
     KF_IMPL_INITABLE(This, bool);
@@ -74,4 +88,4 @@ private:
     }
 };
 
-}// namespace botix::drivers
+}// namespace botix::drivers::actuators
