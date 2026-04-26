@@ -30,7 +30,7 @@ struct PeripheryConfig final : kf::mixin::NonCopyable {
 
     static constexpr WheelOdometerEncoder::Config defaultWheelOdometerEncoderConfig(gpio_num_t a, gpio_num_t b, WheelOdometerEncoder::Config::Direction positive_direction) noexcept {
         return WheelOdometerEncoder::Config{
-            .units_per_tick = static_cast<WheelOdometerEncoder::Config::UnitType>(1),
+            .units_per_tick = static_cast<WheelOdometerEncoder::Config::UnitType>(1), // defaults mock. experemental evaluate requied
             .positive_direction = positive_direction,
             .gpio_num_phase_a = static_cast<WheelOdometerEncoder::Config::GpioNumType>(a),
             .gpio_num_phase_b = static_cast<WheelOdometerEncoder::Config::GpioNumType>(b),

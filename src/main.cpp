@@ -98,6 +98,8 @@ void loop() {
 
         periphery.motor_driver_left.set(current_left_input);
         periphery.motor_driver_right.set(current_right_input);
+
+        // Serial.printf("L:\t%d\tR:\t%d\n", int(periphery.wheel_odometry_encoder_left.positionTicks()), int(periphery.wheel_odometry_encoder_right.positionTicks()));
     }
 
     if (got_packet) {
