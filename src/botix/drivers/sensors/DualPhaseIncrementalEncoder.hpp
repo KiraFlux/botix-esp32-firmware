@@ -14,40 +14,33 @@ namespace botix::drivers::sensors {
 
 namespace internal {
 
-/// @brief Dual phase encoder config
-/// @tparam T Linear Physical tick value equvalent unit type
+/// @brief Configuration for a dual-phase incremental encoder
+/// @tparam T Physical unit type representing linear distance per tick
 template<typename T> struct DualPhaseIncrementalEncoderConfig final : kf::mixin::NonCopyable {
 
-    /// @brief Encoder Tick type
-    using TickType = kf::i32;
+    using TickType = kf::i32;      ///< Integral tick counter type
+    using UnitType = T;            ///< Physical unit type (e.g., millimeters)
+    using StepType = kf::i8;       ///< Direction step type
+    using PhaseStateType = kf::u32;///< Packed two-bit phase state (AB)
 
-    /// @brief Encoder Tick type physical linerar equalent
-    using UnitType = T;
-
-    /// @brief Encoder tick step type
-    using StepType = kf::i8;
-
-    /// @brief Combination of values of A and B phases
-    using PhaseStateType = kf::u32;
-
-    /// @brief Rotaty direction
-    /// @note Right-arm rule
+    /// @brief Rotation direction that increments the tick counter
+    /// @note Follows the right-hand grip rule
     enum class Direction : StepType {
-        CW = -1,
-        CCW = +1,
+        CW = -1,///< Clockwise decrements (negative increment)
+        CCW = +1///< Counter-clockwise increments
     };
 
-    UnitType units_per_tick;                  ///< Tick <-> Unit conversion constant
-    Direction positive_direction;             ///< Defines which direction will raise tick value
-    kf::u8 gpio_num_phase_a, gpio_num_phase_b;///< Phase GPIO numbers
+    UnitType units_per_tick;                  ///< Conversion factor: physical units per encoder tick
+    Direction positive_direction;             ///< Desired positive rotation direction
+    kf::u8 gpio_num_phase_a, gpio_num_phase_b;///< GPIO pins for phase A and phase B
 
-    /// @brief Forward convertion: from ticks to units
+    /// @brief Converts ticks to physical units
     [[nodiscard]] constexpr UnitType unitsFromTicks(TickType value) const noexcept {
         return static_cast<UnitType>(value) * units_per_tick;
     }
 
-    /// @brief Reverse convertion: from units to ticks
-    /// @note has division by units_per_tick. Presision might be less, if UnitType is integral type
+    /// @brief Converts physical units to ticks (truncated)
+    /// @note For integral unit types, precision loss may occur due to integer division
     [[nodiscard]] constexpr TickType ticksFromUnits(UnitType value) const noexcept {
         return static_cast<TickType>(value / units_per_tick);
     }
@@ -55,67 +48,67 @@ template<typename T> struct DualPhaseIncrementalEncoderConfig final : kf::mixin:
 
 }// namespace internal
 
-/// @brief Input abstraction for Encoder with Two digital periodic phases
-/// @tparam T Linear Physical tick value equvalent unit type
+/// @brief Quadrature encoder sensor with 4X decoding
+/// @tparam T Physical linear unit
 template<typename T> struct DualPhaseIncrementalEncoder final :
 
-    ::kf::drivers::sensors::Sensor<DualPhaseIncrementalEncoder<T>, typename internal::DualPhaseIncrementalEncoderConfig<T>::PhaseStateType, void>,
-    ::kf::mixin::Resettable<DualPhaseIncrementalEncoder<T>>,
-    ::kf::mixin::Configurable<internal::DualPhaseIncrementalEncoderConfig<T>> {
+    kf::drivers::sensors::Sensor<DualPhaseIncrementalEncoder<T>, typename internal::DualPhaseIncrementalEncoderConfig<T>::PhaseStateType, void>,
+    kf::mixin::Resettable<DualPhaseIncrementalEncoder<T>>,
+    kf::mixin::Configurable<internal::DualPhaseIncrementalEncoderConfig<T>>
+
+{
 
     using Config = internal::DualPhaseIncrementalEncoderConfig<T>;
 
-    using ::kf::mixin::Configurable<Config>::Configurable;// constructor with just config passing
+    using kf::mixin::Configurable<Config>::Configurable;
 
-    // properties
-
-    /// @brief Get current position in ticks
+    /// @brief Current accumulated position in ticks
     [[nodiscard]] typename Config::TickType positionTicks() const noexcept { return _position_ticks; }
 
-    /// @brief Set current position in ticks
+    /// @brief Overwrite the current tick count
     void positionTicks(typename Config::TickType position) noexcept { _position_ticks = position; }
 
-    /// @brief Get current position in units
+    /// @brief Current position converted to physical units
     [[nodiscard]] typename Config::UnitType positionUnits() const noexcept { return this->config().unitsFromTicks(_position_ticks); }
 
-    /// @brief Set current position in units
+    /// @brief Set position in physical units (converted to ticks)
     void positionUnits(typename Config::UnitType position) noexcept { _position_ticks = this->config().ticksFromUnits(position); }
 
 private:
-    // Updated in ISR
-    volatile typename Config::TickType _position_ticks{0};  ///< Accumulated steps value
-    volatile typename Config::PhaseStateType _last_state{0};///< Last state
+    volatile typename Config::TickType _position_ticks{0};  ///< Accumulated step count
+    volatile typename Config::PhaseStateType _last_state{0};///< Previous AB phase state
 
+    /// @brief ISR triggered on any edge of either phase
     static void IRAM_ATTR onAnyPhaseChange(void *arg) {
-        static const typename Config::StepType increment_table[16]{
-            //   index: last next : note
-            //   base16   AB AB
-            0, //  0  :   00 00   : invalid state
-            +1,//  1  :   00 01   : rotate     CW
-            -1,//  2  :   00 10   : rotate    CCW
-            0, //  3  :   00 11   : invalid state
-            -1,//  4  :   01 00   : rotate    CCW
-            0, //  5  :   01 01   : invalid state
-            0, //  6  :   01 10   : invalid state
-            +1,//  7  :   01 11   : rotate     CW
-            +1,//  8  :   10 00   : rotate     CW
-            0, //  9  :   10 01   : invalid state
-            0, //  A  :   10 10   : invalid state
-            -1,//  B  :   10 11   : rotate    CCW
-            0, //  C  :   11 00   : invalid state
-            -1,//  D  :   11 01   : rotate    CCW
-            +1,//  E  :   11 10   : rotate     CW
-            0, //  F  :   11 11   : invalid state
+        // 4X decoding lookup table (index = (prev_A << 3 | prev_B << 2 | cur_A << 1 | cur_B))
+        static const typename Config::StepType increment_table[16] = {
+            0, // 00 -> 00 : invalid
+            +1,// 00 -> 01 : CW step
+            -1,// 00 -> 10 : CCW step
+            0, // 00 -> 11 : invalid
+            -1,// 01 -> 00 : CCW step
+            0, // 01 -> 01 : invalid
+            0, // 01 -> 10 : invalid
+            +1,// 01 -> 11 : CW step
+            +1,// 10 -> 00 : CW step
+            0, // 10 -> 01 : invalid
+            0, // 10 -> 10 : invalid
+            -1,// 10 -> 11 : CCW step
+            0, // 11 -> 00 : invalid
+            -1,// 11 -> 01 : CCW step
+            +1,// 11 -> 10 : CW step
+            0  // 11 -> 11 : invalid
         };
 
-        auto &self{*static_cast<DualPhaseIncrementalEncoder *>(arg)};
-        const auto current_state{self.read()};
+        auto &self = *static_cast<DualPhaseIncrementalEncoder *>(arg);
+        const auto current_state = self.read();
 
-        self._position_ticks += increment_table[current_state | (self._last_state << 2)] * static_cast<typename Config::StepType>(self.config().positive_direction);
+        // Index formed by concatenating previous and current states (4 bits)
+        self._position_ticks += increment_table[(current_state | (self._last_state << 2))] * static_cast<typename Config::StepType>(self.config().positive_direction);
         self._last_state = current_state;
     }
 
-    // impl
+    // Implementation details
     using This = DualPhaseIncrementalEncoder;
 
     KF_IMPL_INITABLE(This, void);
@@ -129,12 +122,11 @@ private:
         this->reset();
     }
 
-    KF_IMPL(::kf::drivers::sensors::Sensor<DualPhaseIncrementalEncoder<T>, typename Config::PhaseStateType, void>);
+    KF_IMPL(kf::drivers::sensors::Sensor<DualPhaseIncrementalEncoder<T>, typename Config::PhaseStateType, void>);
     typename Config::PhaseStateType readImpl() const noexcept {
-        const auto state_a{static_cast<typename Config::PhaseStateType>(digitalRead(this->config().gpio_num_phase_a))};
-        const auto state_b{static_cast<typename Config::PhaseStateType>(digitalRead(this->config().gpio_num_phase_b))};
-
-        return state_b | (state_a << 1);// pack as 0000'0000'0000'0000 ' 0000'0000'0000'00AB
+        const auto state_a = static_cast<typename Config::PhaseStateType>(digitalRead(this->config().gpio_num_phase_a));
+        const auto state_b = static_cast<typename Config::PhaseStateType>(digitalRead(this->config().gpio_num_phase_b));
+        return (state_a << 1) | state_b;// pack as AB
     }
 
     KF_IMPL_RESETTABLE(This);
