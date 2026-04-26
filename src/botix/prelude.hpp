@@ -6,7 +6,7 @@
 #include <kf/network/EspNow.hpp>
 
 #include "botix/drivers/actuators/DRV8871.hpp"
-#include "botix/drivers/sensors/DualPhaseIncrementalEncoder.hpp"
+#include "botix/drivers/sensors/QuadratureEncoder.hpp"
 
 namespace botix {
 
@@ -14,6 +14,10 @@ using ::kf::network::EspNow;
 
 using MotorDriver = drivers::actuators::DRV8871<::kf::gpio::arduino::PwmOutput>;
 
-using WheelRotaryEncoder = drivers::sensors::DualPhaseIncrementalEncoder<kf::math::Millimeters>;
+/// @brief Wheel odometry encoder
+/// @details This alias configures the generic QuadratureEncoder to output linear wheel travel in millimeters.
+/// @note The conversion from encoder ticks to millimeters relies on the `units_per_tick` configuration,
+///       which must reflect the entire kinematic chain (gear ratio, wheel circumference).
+using WheelOdometerEncoder = drivers::sensors::QuadratureEncoder<kf::math::Millimeters>;
 
 }// namespace botix

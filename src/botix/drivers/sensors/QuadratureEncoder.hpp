@@ -14,12 +14,12 @@ namespace botix::drivers::sensors {
 
 namespace internal {
 
-/// @brief Configuration for a dual-phase incremental encoder
+/// @brief Configuration for a QuadratureEncoder
 /// @tparam T Physical unit type representing linear distance per tick
-template<typename T> struct DualPhaseIncrementalEncoderConfig final : kf::mixin::NonCopyable {
+template<typename T> struct QuadratureEncoderConfig final : kf::mixin::NonCopyable {
 
     using TickType = kf::i32;      ///< Integral tick counter type
-    using UnitType = T;            ///< Physical unit type (e.g., millimeters)
+    using UnitType = T;            ///< Physical unit type
     using StepType = kf::i8;       ///< Direction step type
     using PhaseStateType = kf::u32;///< Packed two-bit phase state (AB)
 
@@ -50,15 +50,15 @@ template<typename T> struct DualPhaseIncrementalEncoderConfig final : kf::mixin:
 
 /// @brief Quadrature encoder sensor with 4X decoding
 /// @tparam T Physical linear unit
-template<typename T> struct DualPhaseIncrementalEncoder final :
+template<typename T> struct QuadratureEncoder final :
 
-    kf::drivers::sensors::Sensor<DualPhaseIncrementalEncoder<T>, typename internal::DualPhaseIncrementalEncoderConfig<T>::PhaseStateType, void>,
-    kf::mixin::Resettable<DualPhaseIncrementalEncoder<T>>,
-    kf::mixin::Configurable<internal::DualPhaseIncrementalEncoderConfig<T>>
+    kf::drivers::sensors::Sensor<QuadratureEncoder<T>, typename internal::QuadratureEncoderConfig<T>::PhaseStateType, void>,
+    kf::mixin::Resettable<QuadratureEncoder<T>>,
+    kf::mixin::Configurable<internal::QuadratureEncoderConfig<T>>
 
 {
 
-    using Config = internal::DualPhaseIncrementalEncoderConfig<T>;
+    using Config = internal::QuadratureEncoderConfig<T>;
 
     using kf::mixin::Configurable<Config>::Configurable;
 
@@ -100,7 +100,7 @@ private:
             0  // 11 -> 11 : invalid
         };
 
-        auto &self = *static_cast<DualPhaseIncrementalEncoder *>(arg);
+        auto &self = *static_cast<QuadratureEncoder *>(arg);
         const auto current_state = self.read();
 
         // Index formed by concatenating previous and current states (4 bits)
@@ -109,7 +109,7 @@ private:
     }
 
     // Implementation details
-    using This = DualPhaseIncrementalEncoder;
+    using This = QuadratureEncoder;
 
     KF_IMPL_INITABLE(This, void);
     void initImpl() noexcept {
@@ -122,7 +122,7 @@ private:
         this->reset();
     }
 
-    KF_IMPL(kf::drivers::sensors::Sensor<DualPhaseIncrementalEncoder<T>, typename Config::PhaseStateType, void>);
+    KF_IMPL(kf::drivers::sensors::Sensor<QuadratureEncoder<T>, typename Config::PhaseStateType, void>);
     typename Config::PhaseStateType readImpl() const noexcept {
         const auto state_a = static_cast<typename Config::PhaseStateType>(digitalRead(this->config().gpio_num_phase_a));
         const auto state_b = static_cast<typename Config::PhaseStateType>(digitalRead(this->config().gpio_num_phase_b));
