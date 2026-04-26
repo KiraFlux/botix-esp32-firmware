@@ -22,6 +22,7 @@ template<typename T> struct QuadratureEncoderConfig final : kf::mixin::NonCopyab
     using UnitType = T;            ///< Physical unit type
     using StepType = kf::i8;       ///< Direction step type
     using PhaseStateType = kf::u32;///< Packed two-bit phase state (AB)
+    using GpioNumType = kf::u8;    ///< GPIO number type
 
     /// @brief Rotation direction that increments the tick counter
     /// @note Follows the right-hand grip rule
@@ -30,9 +31,9 @@ template<typename T> struct QuadratureEncoderConfig final : kf::mixin::NonCopyab
         CCW = +1///< Counter-clockwise increments
     };
 
-    UnitType units_per_tick;                  ///< Conversion factor: physical units per encoder tick
-    Direction positive_direction;             ///< Desired positive rotation direction
-    kf::u8 gpio_num_phase_a, gpio_num_phase_b;///< GPIO pins for phase A and phase B
+    UnitType units_per_tick;                       ///< Conversion factor: physical units per encoder tick
+    Direction positive_direction;                  ///< Desired positive rotation direction
+    GpioNumType gpio_num_phase_a, gpio_num_phase_b;///< GPIO pins for phase A and phase B
 
     /// @brief Converts ticks to physical units
     [[nodiscard]] constexpr UnitType unitsFromTicks(TickType value) const noexcept {
