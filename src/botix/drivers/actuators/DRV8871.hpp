@@ -10,7 +10,7 @@
 #include <kf/gpio/GPIO.hpp>
 #include <kf/mixin/Configurable.hpp>
 
-namespace botix::drivers {
+namespace botix::drivers::actuators {
 
 namespace internal {
 
@@ -24,10 +24,15 @@ struct DRV8871Config {
 
 }// namespace internal
 
-template<typename PwmOutputImpl>
-struct DRV8871 final : kf::drivers::actuators::Actuator<DRV8871<PwmOutputImpl>, bool>, kf::mixin::Configurable<internal::DRV8871Config> {
-    KF_CHECK_IMPL(PwmOutputImpl, ::kf::gpio::PwmOutputTag);
+template<typename I> struct DRV8871 final :
 
+    kf::drivers::actuators::Actuator<DRV8871<I>, bool>,
+    kf::mixin::Configurable<internal::DRV8871Config>
+
+{
+    KF_CHECK_IMPL(I, ::kf::gpio::PwmOutputTag);
+
+    using PwmOutputImpl = I;
     using Config = internal::DRV8871Config;
 
     explicit DRV8871(const Config &config, PwmOutputImpl &&forward, PwmOutputImpl &&backward) noexcept :
