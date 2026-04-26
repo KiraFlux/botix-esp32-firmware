@@ -95,7 +95,7 @@ private:
         
         const auto current_state{digitalRead(config.pin_phase_b) | (digitalRead(config.pin_phase_a) << 1)};
 
-        self._position += increment_table[(current_state | (self._last_state << 2)) & 0xf] * static_cast<Config::StepType>(config.positive_direction);
+        self._position += increment_table[current_state | (self._last_state << 2)] * static_cast<Config::StepType>(config.positive_direction);
         self._last_state = current_state;
     }
 
