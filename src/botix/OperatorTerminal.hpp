@@ -16,6 +16,8 @@
 
 namespace botix {
 
+/// @brief Permanent ESP‑NOW service for interactive robot control and telemetry.
+/// @details Lets an operator drive, monitor, and tweak the robot in real time
 struct OperatorTerminal final :
 
     ::kf::mixin::Initable<OperatorTerminal, bool>,
@@ -26,8 +28,12 @@ struct OperatorTerminal final :
 
     using EspNow = ::kf::network::EspNow;
 
+    /// @brief Sub-service that translates incoming control packets into motor PWM values
+    /// @details It implements differential mixing (tank drive) from the four joystick axes,
+    ///          updates motors at a fixed rate, and enforces a safety timeout.
     struct Control final : ::kf::mixin::NonCopyable, ::kf::mixin::TimedPollable<Control> {
 
+        /// @brief Raw data received from the remote controller
         struct Input {
             using ValueType = kf::i16;
 
@@ -38,6 +44,7 @@ struct OperatorTerminal final :
 
         void input(const Input &input) noexcept {
             _got_packet = true;
+            // tank mixing
             _motor_left_set = input.left_y + input.left_x;
             _motor_right_set = input.left_y - input.left_x;
         }
@@ -45,8 +52,8 @@ struct OperatorTerminal final :
     private:
         Periphery &_periphery;
 
-        kf::math::Timer _update_timer{static_cast<kf::math::Milliseconds>(100)};
-        kf::math::Timer _timeout_timer{static_cast<kf::math::Milliseconds>(1000)};
+        kf::math::Timer _update_timer{static_cast<kf::math::Milliseconds>(100)};  ///< Timer that fires at 100 Hz to write the latest setpoints to the motor drivers
+        kf::math::Timer _timeout_timer{static_cast<kf::math::Milliseconds>(1000)};///< Safety timer: if no fresh control packet arrives within 1 s, motors are zeroed
         Input::ValueType _motor_left_set{}, _motor_right_set{};
         bool _need_reset_update_timer{true};
         volatile bool _got_packet{false};
@@ -91,15 +98,15 @@ private:
 
     KF_IMPL_INITABLE(This, bool);
     bool initImpl() noexcept {
-        auto &e{EspNow::instance()};
+        auto &espnow{EspNow::instance()};
 
-        const auto init_result{e.init()};
+        const auto init_result{espnow.init()};
         if (init_result.isError()) {
             logger.error("Espnow init failed");
             return false;
         }
 
-        (void) e.onReceiveFromUnknown([this](const EspNow::Mac &mac, kf::memory::Slice<const kf::u8> buffer) -> void {
+        (void) espnow.onReceiveFromUnknown([this](const EspNow::Mac &mac, kf::memory::Slice<const kf::u8> buffer) -> void {
             switch (buffer.size()) {
                 case sizeof(Control::Input):
                     _control.input(*reinterpret_cast<const Control::Input *>(buffer.data()));
@@ -130,6 +137,7 @@ private:
                 (void) _broadcast_peer.value().writeByte(0xAA);
             }
 
+            // Telemetry print that will later be replaced by the UI subsystem
             // Serial.printf("L:\t%d\tR:\t%d\n", int(periphery.wheel_odometry_encoder_left.positionTicks()), int(periphery.wheel_odometry_encoder_right.positionTicks()));
         }
 

@@ -9,12 +9,13 @@
 
 namespace botix {
 
+/// @brief DRV8871 motor driver bound to the Arduino PWM backend
 using MotorDriver = drivers::actuators::DRV8871<::kf::gpio::arduino::PwmOutput>;
 
 /// @brief Wheel odometry encoder
 /// @details This alias configures the generic QuadratureEncoder to output linear wheel travel in millimeters.
 /// @note The conversion from encoder ticks to millimeters relies on the `units_per_tick` configuration,
 ///       which must reflect the entire kinematic chain (gear ratio, wheel circumference).
-using WheelOdometerEncoder = drivers::sensors::QuadratureEncoder<kf::math::Millimeters>;
+using WheelOdometerEncoder = drivers::sensors::QuadratureEncoder<::kf::math::Millimeters>;
 
 }// namespace botix

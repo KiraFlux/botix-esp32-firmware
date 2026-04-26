@@ -13,14 +13,25 @@ namespace botix {
 
 namespace internal {
 
+/// @brief Configuration aggregate for all hardware peripherals of the Botix robot
 struct PeripheryConfig final : kf::mixin::NonCopyable {
 
-    MotorDriver::PwmOutputImpl::Config motor_driver_left_pwm_forward, motor_driver_left_pwm_backward, motor_driver_right_pwm_forward, motor_driver_right_pwm_backward;
+    /// @brief PWM channel configurations for the two half‑bridges of each motor
+    MotorDriver::PwmOutputImpl::Config
+        motor_driver_left_pwm_forward,
+        motor_driver_left_pwm_backward,
+        motor_driver_right_pwm_forward,
+        motor_driver_right_pwm_backward;
 
+    /// @brief Common motor driver parameters (dead zones, max input)
     MotorDriver::Config motor_driver;
 
-    WheelOdometerEncoder::Config wheel_odometry_encoder_left, wheel_odometry_encoder_right;
+    /// @brief Configurations for left and right quadrature encoders
+    WheelOdometerEncoder::Config
+        wheel_odometry_encoder_left,
+        wheel_odometry_encoder_right;
 
+    /// @brief Helper to create a PWM output configuration for a given GPIO and LEDC channel
     static constexpr MotorDriver::PwmOutputImpl::Config defaultPwmOutputConfig(gpio_num_t pin, kf::u8 channel) noexcept {
         return MotorDriver::PwmOutputImpl::Config{
             .frequency_hz = 20000,
@@ -30,15 +41,19 @@ struct PeripheryConfig final : kf::mixin::NonCopyable {
         };
     }
 
-    static constexpr WheelOdometerEncoder::Config defaultWheelOdometerEncoderConfig(gpio_num_t a, gpio_num_t b, WheelOdometerEncoder::Config::Direction positive_direction) noexcept {
+    /// @brief Helper to create an encoder configuration for a pair of GPIOs
+    static constexpr WheelOdometerEncoder::Config defaultWheelOdometerEncoderConfig(
+        gpio_num_t a, gpio_num_t b,
+        WheelOdometerEncoder::Config::Direction positive_direction) noexcept {
         return WheelOdometerEncoder::Config{
-            .units_per_tick = static_cast<WheelOdometerEncoder::Config::UnitType>(1), // defaults mock. experemental evaluate requied
+            .units_per_tick = static_cast<WheelOdometerEncoder::Config::UnitType>(1),// placeholder, real value depends on kinematic chain
             .positive_direction = positive_direction,
             .gpio_num_phase_a = static_cast<WheelOdometerEncoder::Config::GpioNumType>(a),
             .gpio_num_phase_b = static_cast<WheelOdometerEncoder::Config::GpioNumType>(b),
         };
     }
 
+    /// @brief Default motor driver parameters (dead zones, max input)
     static constexpr MotorDriver::Config defaultMotorDriverConfig() noexcept {
         return MotorDriver::Config{
             .max_input = 1000,
@@ -47,6 +62,7 @@ struct PeripheryConfig final : kf::mixin::NonCopyable {
         };
     }
 
+    /// @brief Default factory settings matching the standard Botix wiring
     static constexpr PeripheryConfig defaults() noexcept {
         return PeripheryConfig{
             .motor_driver_left_pwm_forward = defaultPwmOutputConfig(GPIO_NUM_32, 0),
@@ -62,6 +78,7 @@ struct PeripheryConfig final : kf::mixin::NonCopyable {
 
 }// namespace internal
 
+/// @brief Central object that owns and initialises all hardware drivers of the Botix robot
 struct Periphery final :
 
     ::kf::mixin::NonCopyable,
@@ -69,7 +86,6 @@ struct Periphery final :
     ::kf::mixin::Initable<Periphery, bool>
 
 {
-
     using Config = internal::PeripheryConfig;
 
     using ::kf::mixin::Configurable<Config>::Configurable;
@@ -96,12 +112,11 @@ struct Periphery final :
 
 private:
     // impl
-
     using This = Periphery;
 
     KF_IMPL_INITABLE(This, bool);
     bool initImpl() noexcept {
-
+        // Encoders must be initialised first because their interrupts start counting immediately
         wheel_odometry_encoder_left.init();
         wheel_odometry_encoder_right.init();
 
