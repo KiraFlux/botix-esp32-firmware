@@ -3,14 +3,11 @@
 
 #include <kf/gpio/arduino.hpp>
 #include <kf/math/units.hpp>
-#include <kf/network/EspNow.hpp>
 
 #include "botix/drivers/actuators/DRV8871.hpp"
 #include "botix/drivers/sensors/QuadratureEncoder.hpp"
 
 namespace botix {
-
-using ::kf::network::EspNow;
 
 using MotorDriver = drivers::actuators::DRV8871<::kf::gpio::arduino::PwmOutput>;
 
