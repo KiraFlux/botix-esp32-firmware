@@ -59,6 +59,9 @@ private:
         if (_timeout_timer.expired(now)) {
             _motor_left_set = 0;
             _motor_right_set = 0;
+
+            _periphery.motor_driver_left.stop();
+            _periphery.motor_driver_right.stop();
         }
 
         if (_update_timer.expired(now) or _need_reset_update_timer) {
