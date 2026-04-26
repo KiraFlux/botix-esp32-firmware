@@ -5,7 +5,6 @@
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 
-#include "botix/input/DualPhaseIncrementalEncoder.hpp"
 #include "botix/prelude.hpp"
 
 namespace botix {
@@ -14,12 +13,12 @@ namespace internal {
 
 struct PeripheryConfig final : kf::mixin::NonCopyable {
 
-    ::botix::PwmOutput::Config motor_left_forward, motor_left_backward, motor_right_forward, motor_right_backward;
+    MotorDriver::PwmOutputImpl::Config motor_left_pwm_forward, motor_left_pwm_backward, motor_right_pwm_forward, motor_right_pwm_backward;
 
-    ::botix::DRV8871::Config motor_driver;
+    MotorDriver::Config motor_driver;
 
-    static constexpr PwmOutput::Config createMotorPwmOutputConfig(gpio_num_t pin, kf::u8 channel) noexcept {
-        return PwmOutput::Config{
+    static constexpr MotorDriver::PwmOutputImpl::Config createMotorPwmOutputConfig(gpio_num_t pin, kf::u8 channel) noexcept {
+        return MotorDriver::PwmOutputImpl::Config{
             .frequency_hz = 20000,
             .resolution_bits = 8,
             .pin = static_cast<kf::u8>(pin),
@@ -29,10 +28,10 @@ struct PeripheryConfig final : kf::mixin::NonCopyable {
 
     static constexpr PeripheryConfig defaults() noexcept {
         return PeripheryConfig{
-            .motor_left_forward = createMotorPwmOutputConfig(GPIO_NUM_32, 0),
-            .motor_left_backward = createMotorPwmOutputConfig(GPIO_NUM_33, 1),
-            .motor_right_forward = createMotorPwmOutputConfig(GPIO_NUM_25, 2),
-            .motor_right_backward = createMotorPwmOutputConfig(GPIO_NUM_26, 3),
+            .motor_left_pwm_forward = createMotorPwmOutputConfig(GPIO_NUM_32, 0),
+            .motor_left_pwm_backward = createMotorPwmOutputConfig(GPIO_NUM_33, 1),
+            .motor_right_pwm_forward = createMotorPwmOutputConfig(GPIO_NUM_25, 2),
+            .motor_right_pwm_backward = createMotorPwmOutputConfig(GPIO_NUM_26, 3),
             .motor_driver = {
                 .max_input = 1000,
                 .forward_dead_zone = 10,
@@ -44,22 +43,28 @@ struct PeripheryConfig final : kf::mixin::NonCopyable {
 
 }// namespace internal
 
-struct Periphery final : kf::mixin::NonCopyable, kf::mixin::Configurable<internal::PeripheryConfig>, kf::mixin::Initable<Periphery, bool> {
+struct Periphery final :
+
+    ::kf::mixin::NonCopyable,
+    ::kf::mixin::Configurable<internal::PeripheryConfig>,
+    ::kf::mixin::Initable<Periphery, bool>
+
+{
 
     using Config = internal::PeripheryConfig;
 
-    explicit Periphery(const Config &config) noexcept : kf::mixin::Configurable<Config>{config} {}
+    using ::kf::mixin::Configurable<Config>::Configurable;
 
-    DRV8871 left_motor{
+    MotorDriver motor_driver_left{
         this->config().motor_driver,
-        PwmOutput{this->config().motor_left_forward},
-        PwmOutput{this->config().motor_left_backward},
+        MotorDriver::PwmOutputImpl{this->config().motor_left_pwm_forward},
+        MotorDriver::PwmOutputImpl{this->config().motor_left_pwm_backward},
     };
 
-    DRV8871 right_motor{
+    MotorDriver motor_driver_right{
         this->config().motor_driver,
-        PwmOutput{this->config().motor_right_forward},
-        PwmOutput{this->config().motor_right_backward},
+        MotorDriver::PwmOutputImpl{this->config().motor_right_pwm_forward},
+        MotorDriver::PwmOutputImpl{this->config().motor_right_pwm_backward},
     };
 
 private:
@@ -70,8 +75,8 @@ private:
     KF_IMPL_INITABLE(This, bool);
     bool initImpl() noexcept {
 
-        if (not left_motor.init()) { return false; }
-        if (not right_motor.init()) { return false; }
+        if (not motor_driver_left.init()) { return false; }
+        if (not motor_driver_right.init()) { return false; }
 
         return true;
     }

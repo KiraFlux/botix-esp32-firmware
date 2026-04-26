@@ -55,8 +55,8 @@ void setup() {
         return;
     }
 
-    periphery.left_motor.stop();
-    periphery.right_motor.stop();
+    periphery.motor_driver_left.stop();
+    periphery.motor_driver_right.stop();
 
     auto &e{botix::EspNow::instance()};
 
@@ -96,8 +96,8 @@ void loop() {
     if (control_update_timer.expired(now)) {
         control_update_timer.start(now);
 
-        periphery.left_motor.set(current_left_input);
-        periphery.right_motor.set(current_right_input);
+        periphery.motor_driver_left.set(current_left_input);
+        periphery.motor_driver_right.set(current_right_input);
     }
 
     if (got_packet) {
