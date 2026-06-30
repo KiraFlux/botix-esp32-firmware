@@ -26,6 +26,8 @@ struct Control :
     struct Input {
         using ValueType = kf::i16;
 
+        static constexpr ValueType max_value{1000}; // MAVLink MANUAL_CONTROL format 
+
         ValueType left_x, left_y, right_x, right_y;
     };
 
@@ -37,6 +39,9 @@ struct Control :
         // tank mixing
         _motor_left_set = input.left_y + input.left_x;
         _motor_right_set = input.left_y - input.left_x;
+
+        _servo_claw_set = input.right_x;
+        _servo_arm_set = input.right_y;
     }
 
 private:
@@ -50,7 +55,7 @@ private:
     /// @brief Safety timer: if no fresh control packet arrives within 1 s, motors are zeroed
     kf::math::Timer _timeout_timer{timeout_timer_config};
 
-    Input::ValueType _motor_left_set{}, _motor_right_set{};
+    Input::ValueType _motor_left_set{}, _motor_right_set{}, _servo_claw_set{}, _servo_arm_set{};
     volatile bool _got_packet{false};
 
     using This = Control;
@@ -65,6 +70,8 @@ private:
         if (_timeout_timer.expired(now)) {
             _motor_left_set = 0;
             _motor_right_set = 0;
+            _servo_claw_set = 0;
+            _servo_arm_set = 0;
 
             _periphery.motor_driver_left.stop();
             _periphery.motor_driver_right.stop();
@@ -75,6 +82,20 @@ private:
 
             _periphery.motor_driver_left.set(_motor_left_set);
             _periphery.motor_driver_right.set(_motor_right_set);
+
+            _periphery.servo_claw.write(kf::linearMap<kf::math::Degrees>(
+                _servo_claw_set,
+                0, Input::max_value,
+                _periphery.config.servo.angle_range.start,
+                _periphery.config.servo.angle_range.end
+            ));
+
+            _periphery.servo_arm.write(kf::linearMap<kf::math::Degrees>(
+                _servo_arm_set,
+                0, Input::max_value,
+                _periphery.config.servo.angle_range.start,
+                _periphery.config.servo.angle_range.end
+            ));
         }
     }
 };
