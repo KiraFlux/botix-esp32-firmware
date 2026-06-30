@@ -15,7 +15,12 @@ namespace botix {
 /// @brief Sub-service that translates incoming control packets into motor PWM values
 /// @details It implements differential mixing (tank drive) from the four joystick axes,
 ///          updates motors at a fixed rate, and enforces a safety timeout.
-struct Control final : kf::mixin::NonCopyable, kf::mixin::TimedPollable<Control> {
+struct Control :
+
+    kf::mixin::NonCopyable,
+    kf::mixin::TimedPollable<Control>
+
+{
 
     /// @brief Raw data received from the remote controller
     struct Input {
@@ -24,7 +29,8 @@ struct Control final : kf::mixin::NonCopyable, kf::mixin::TimedPollable<Control>
         ValueType left_x, left_y, right_x, right_y;
     };
 
-    explicit Control(Periphery &periphery) noexcept : _periphery{periphery} {}
+    explicit Control(Periphery &periphery) noexcept :
+        _periphery{periphery} {}
 
     void input(const Input &input) noexcept {
         _got_packet = true;
@@ -36,17 +42,17 @@ struct Control final : kf::mixin::NonCopyable, kf::mixin::TimedPollable<Control>
 private:
     Periphery &_periphery;
 
+    static constexpr kf::math::Timer::Config update_timer_config{.period = 100}, timeout_timer_config{.period=1000};
+
     /// @brief Timer that fires at 100 Hz to write the latest setpoints to the motor drivers
-    kf::math::Timer _update_timer{static_cast<kf::math::Milliseconds>(100)};
+    kf::math::Timer _update_timer{update_timer_config};
 
     /// @brief Safety timer: if no fresh control packet arrives within 1 s, motors are zeroed
-    kf::math::Timer _timeout_timer{static_cast<kf::math::Milliseconds>(1000)};
+    kf::math::Timer _timeout_timer{timeout_timer_config};
 
     Input::ValueType _motor_left_set{}, _motor_right_set{};
-    bool _need_reset_update_timer{true};
     volatile bool _got_packet{false};
 
-    // impl
     using This = Control;
 
     KF_IMPL_TIMED_POLLABLE(This);
@@ -64,9 +70,8 @@ private:
             _periphery.motor_driver_right.stop();
         }
 
-        if (_update_timer.expired(now) or _need_reset_update_timer) {
+        if (_update_timer.expired(now)) {
             _update_timer.start(now);
-            _need_reset_update_timer = false;
 
             _periphery.motor_driver_left.set(_motor_left_set);
             _periphery.motor_driver_right.set(_motor_right_set);

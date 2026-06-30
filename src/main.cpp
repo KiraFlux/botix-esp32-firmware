@@ -9,10 +9,6 @@
 #include "botix/Control.hpp"
 #include "botix/OperatorTerminal.hpp"
 #include "botix/Periphery.hpp"
-#include "botix/ui/RootPage.hpp"
-#include "botix/ui/UI.hpp"
-
-static auto &ui{botix::ui::UI::instance()};
 
 static auto periphery_config{botix::Periphery::Config::defaults()};
 
@@ -27,8 +23,6 @@ static botix::Control control{
 static botix::OperatorTerminal operator_terminal{
     control,
 };
-
-static botix::ui::RootPage root_page{};
 
 void setup() {
     constexpr auto logger{kf::Logger::create("setup")};
@@ -50,8 +44,6 @@ void setup() {
         logger.warn("Operator Terminal init failed");
     }
 
-    ui.bindPage(root_page);
-
     logger.info("Ready");
 }
 
@@ -59,7 +51,6 @@ void loop() {
     constexpr auto loop_period{1000 / 100};// 100 Hz Loop rate
 
     const auto now{static_cast<kf::math::Milliseconds>(millis())};
-    ui.poll(now);
     operator_terminal.poll(now);
     control.poll(now);
 
