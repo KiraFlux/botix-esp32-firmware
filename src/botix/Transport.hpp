@@ -3,14 +3,16 @@
 
 #pragma once
 
+#include <utility>
+
 #include <WiFi.h>
 
 #include <kf/Logger.hpp>
+#include <kf/MacAddress.hpp>
 #include <kf/Option.hpp>
 #include <kf/Timer.hpp>
-#include <kf/units.hpp>
 #include <kf/esp/Espnow.hpp>
-#include <kf/MacAddress.hpp>
+#include <kf/units.hpp>
 
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
@@ -20,31 +22,28 @@
 
 namespace botix {
 
-/// @brief Permanent ESP‑NOW service for interactive robot control and telemetry.
-/// @details Lets an operator drive, monitor, and tweak the robot in real time
-struct OperatorTerminal final :
+struct Transport final :
 
-    ::kf::mixin::Initable<OperatorTerminal, bool()>,
-    ::kf::mixin::NonCopyable,
-    ::kf::mixin::TimedPollable<OperatorTerminal>
+    kf::mixin::Initable<Transport, bool()>,
+    kf::mixin::NonCopyable,
+    kf::mixin::TimedPollable<Transport>
 
 {
-    using Self = OperatorTerminal;
+    using Self = Transport;
 
-    explicit OperatorTerminal(Control &control) noexcept :
-        _control{control} {}
+    void callback(auto &&f) noexcept {
+        Espnow::instance().callback(std::forward<decltype(f)>(f));
+    }
 
 private:
     using Espnow = kf::esp::Espnow;
 
-    inline static kf::Logger logger{"OperatorTerminal"};
+    inline static kf::Logger logger{"Transport"};
 
-    static constexpr kf::Timer::Config heartbeat_timer_config{.value = 1000};
+    static constexpr kf::Timer::Config heartbeat_timer_config{.value = 2000};
 
-    Control &_control;
     kf::Option<Espnow::Peer> _broadcast_peer{};
     kf::Timer _heartbeat_timer{heartbeat_timer_config};
-
 
     KF_IMPL_INITABLE(Self, bool());
     bool initImpl() noexcept {
@@ -55,22 +54,11 @@ private:
 
         auto &espnow = Espnow::instance();
 
-        const auto init_result = espnow.init();
+        auto const init_result = espnow.init();
         if (init_result.isError()) {
-            logger.error("Espnow init failed");
+            logger.error("Espnow init failed: {}", init_result.error());
             return false;
         }
-
-        espnow.callback([this](const kf::MacAddress &mac, kf::Slice<const kf::u8> buffer) -> void {
-            switch (buffer.length()) {
-                case sizeof(Control::Input):
-                    _control.input(*reinterpret_cast<const Control::Input *>(buffer.data()));
-                    return;
-
-                default:
-                    return;
-            }
-        });
 
         auto peer_result = Espnow::Peer::create({
             .mac_address = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
@@ -80,7 +68,7 @@ private:
         if (peer_result.isOk()) {
             _broadcast_peer = kf::some(std::move(peer_result.ok()));
         } else {
-            logger.error("Espnow peer add failed");
+            logger.error("Espnow peer add failed: {}", peer_result.error());
         }
 
         return true;
@@ -91,14 +79,9 @@ private:
         if (_heartbeat_timer.expired(now)) {
             _heartbeat_timer.start(now);
 
-            logger.debug("heartbeat");
-
             if (_broadcast_peer.isSome()) {
                 (void) _broadcast_peer.unwrap().writeByte(0xAA);
-                logger.debug("send");
             }
-
-            // Serial.printf("L:\t%d\tR:\t%d\n", int(periphery.wheel_odometry_encoder_left.positionTicks()), int(periphery.wheel_odometry_encoder_right.positionTicks()));
         }
     }
 };

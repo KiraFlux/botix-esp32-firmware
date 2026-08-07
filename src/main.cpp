@@ -9,51 +9,80 @@
 #include <kf/units.hpp>
 
 #include "botix/Control.hpp"
-#include "botix/OperatorTerminal.hpp"
 #include "botix/Periphery.hpp"
+#include "botix/RootConfig.hpp"
+#include "botix/Transport.hpp"
 
-static botix::Periphery::Config periphery_config{};
+static botix::RootConfig root_config{};
 
 static botix::Periphery periphery{
-    periphery_config,
+    root_config.periphery,
 };
 
 static botix::Control control{
-    periphery,
+    root_config.control,
 };
 
-static botix::OperatorTerminal operator_terminal{
-    control,
-};
+static botix::Transport transport{};
+
+static void onTransportReceive(kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) {
+    switch (buffer.length()) {
+        case sizeof(botix::Control::Input):
+            control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
+            return;
+
+        default:
+            return;
+    }
+}
 
 void kf::main(kf::Init &init) {
-    init.logger.debug("starting");
+    init.logger.debug("Starting");
 
-    periphery_config.reset();// set to defaults
+    root_config.reset();// set to defaults
 
     if (not periphery.init()) {
         init.logger.error("Periphery init failed");
         return;
     }
 
-    periphery.motor_driver_left.stop();
-    periphery.motor_driver_right.stop();
-
-    if (not operator_terminal.init()) {
-        init.logger.warn("Operator Terminal init failed");
+    if (not transport.init()) {
+        init.logger.warn("Transport init failed");
+        return;
     }
+
+    transport.callback(onTransportReceive);
 
     init.logger.info("Ready");
 
     while (true) {
         constexpr auto loop_period{1000 / 100};// 10 Hz Loop rate
 
-        const auto now = rtos::Clock::now();
-        operator_terminal.poll(now);
+        auto const now = rtos::Clock::now();
+
+        transport.poll(now);
         control.poll(now);
 
-        rtos::Task::sleep(loop_period);
+        {
+            auto const &o = control.output();
 
-        init.logger.debug("L: {}, R: {}", periphery.wheel_odometry_encoder_left.positionTicks(), periphery.wheel_odometry_encoder_right.positionTicks());
+            periphery.motor_driver_left.set(o.motor_left_set);
+            periphery.motor_driver_right.set(o.motor_right_set);
+        }
+
+        {
+            while (init.io.availableForRead() > 0) {
+                if (auto const read = init.io.readPacket<char>(); read.isOk()) {
+                    if (read.ok() == 'e') {
+                        init.logger.debug(
+                            "Encoders: \tL: {} \t R: {}",
+                            periphery.wheel_odometry_encoder_left.positionTicks(),
+                            periphery.wheel_odometry_encoder_right.positionTicks());
+                    }
+                }
+            }
+        }
+
+        rtos::Task::sleep(loop_period);
     }
 }

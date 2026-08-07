@@ -46,9 +46,7 @@ struct Periphery :
 
         // sensors
 
-        WheelOdometerEncoder::Config
-            wheel_odometry_encoder_left,
-            wheel_odometry_encoder_right;
+        WheelOdometerEncoder::Config wheel_odometry_encoder;
 
     private:
         KF_IMPL_RESETTABLE(Config);
@@ -70,18 +68,15 @@ struct Periphery :
 
             // sensors
 
-            wheel_odometry_encoder_left.units_per_tick = 1;
-            wheel_odometry_encoder_left.pull = kf::gpio::DigitalInput::Pull::External;
-
-            wheel_odometry_encoder_right.units_per_tick = 1;
-            wheel_odometry_encoder_right.pull = kf::gpio::DigitalInput::Pull::External;
+            wheel_odometry_encoder.units_per_tick = 1;
+            wheel_odometry_encoder.pull = kf::gpio::DigitalInput::Pull::External;
         }
     };
 
-    explicit Periphery(const Config &config) noexcept :
+    explicit Periphery(Config const &config) noexcept :
         config{config} {}
 
-    const Config &config;
+    Config const &config;
 
     // actuators
 
@@ -121,15 +116,15 @@ struct Periphery :
     // wheel odometry encoders
 
     WheelOdometerEncoder wheel_odometry_encoder_left{
-        config.wheel_odometry_encoder_left,
-        // CCW direction
-        kf::gpio::G36, kf::gpio::G39,
+        config.wheel_odometry_encoder,
+        kf::gpio::G36,
+        kf::gpio::G39,
     };
 
     WheelOdometerEncoder wheel_odometry_encoder_right{
-        config.wheel_odometry_encoder_right,
-        // CW direction
-        kf::gpio::G35, kf::gpio::G34,
+        config.wheel_odometry_encoder,
+        kf::gpio::G34,
+        kf::gpio::G35,
     };
 
 private:
@@ -142,8 +137,14 @@ private:
         if (not motor_driver_left.init()) { return false; }
         if (not motor_driver_right.init()) { return false; }
 
+        motor_driver_left.stop();
+        motor_driver_right.stop();
+
         if (not servo_claw.init()) { return false; }
         if (not servo_arm.init()) { return false; }
+
+        servo_claw.stop();
+        servo_arm.stop();
 
         return true;
     }
