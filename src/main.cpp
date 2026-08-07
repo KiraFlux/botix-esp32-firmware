@@ -11,7 +11,7 @@
 #include "botix/Control.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
-#include "botix/Transport.hpp"
+#include "botix/transport/EspnowTransport.hpp"
 
 static botix::RootConfig root_config{};
 
@@ -23,7 +23,7 @@ static botix::Control control{
     root_config.control,
 };
 
-static botix::Transport transport{};
+static botix::EspnowTransport espnow_transport{};
 
 static void onTransportReceive(kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) {
     switch (buffer.length()) {
@@ -46,12 +46,12 @@ void kf::main(kf::Init &init) {
         return;
     }
 
-    if (not transport.init()) {
-        init.logger.warn("Transport init failed");
+    if (not espnow_transport.init()) {
+        init.logger.warn("EspnowTransport init failed");
         return;
     }
 
-    transport.callback(onTransportReceive);
+    espnow_transport.callback(onTransportReceive);
 
     init.logger.info("Ready");
 
@@ -60,7 +60,7 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
-        transport.poll(now);
+        espnow_transport.poll(now);
         control.poll(now);
 
         {

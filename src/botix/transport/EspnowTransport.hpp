@@ -22,14 +22,14 @@
 
 namespace botix {
 
-struct Transport final :
+struct EspnowTransport final :
 
-    kf::mixin::Initable<Transport, bool()>,
+    kf::mixin::Initable<EspnowTransport, bool()>,
     kf::mixin::NonCopyable,
-    kf::mixin::TimedPollable<Transport>
+    kf::mixin::TimedPollable<EspnowTransport>
 
 {
-    using Self = Transport;
+    using Self = EspnowTransport;
 
     void callback(auto &&f) noexcept {
         Espnow::instance().callback(std::forward<decltype(f)>(f));
@@ -38,7 +38,7 @@ struct Transport final :
 private:
     using Espnow = kf::esp::Espnow;
 
-    inline static kf::Logger logger{"Transport"};
+    inline static kf::Logger logger{"EspnowTransport"};
 
     static constexpr kf::Timer::Config heartbeat_timer_config{.value = 2000};
 
