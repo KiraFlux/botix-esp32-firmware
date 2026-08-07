@@ -33,6 +33,64 @@ static botix::Control control{
     root_config.control,
 };
 
+void onTransportReceive(kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) {
+    (void) mac;
+    protocol_link.receive(buffer);
+}
+
+void onRawProtocolReceive(kf::Slice<kf::u8 const> buffer) {
+    switch (buffer.length()) {
+        case sizeof(botix::Control::Input):
+            control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
+            return;
+
+        default:
+            return;
+    }
+}
+
+void onMavlinkProtocolReceive(mavlink_message_t const &message) {
+    switch (message.msgid) {
+        case MAVLINK_MSG_ID_MANUAL_CONTROL: {
+            mavlink_manual_control_t m;
+            mavlink_msg_manual_control_decode(&message, &m);
+
+            control.input(botix::Control::Input{
+                .left_x = m.r,
+                .left_y = m.z,
+                .right_x = m.y,
+                .right_y = m.x,
+            });
+
+            return;
+        }
+    }
+}
+
+void onInputChar(kf::Init &init, char c) {
+    switch (c) {
+        case 'o': {
+            init.logger.debug(
+                "Encoders: \tL: {} \t R: {}",
+                periphery.wheel_odometry_encoder_left.positionTicks(),
+                periphery.wheel_odometry_encoder_right.positionTicks());
+            return;
+        }
+
+        case 'r': {
+            protocol_link.protocol(protocol_registry.raw());
+            init.logger.debug("protocol: Raw");
+            return;
+        }
+
+        case 'm': {
+            protocol_link.protocol(protocol_registry.mavlink());
+            init.logger.debug("protocol: Mavlink");
+            return;
+        }
+    }
+}
+
 void kf::main(kf::Init &init) {
     init.logger.debug("Starting");
 
@@ -48,39 +106,9 @@ void kf::main(kf::Init &init) {
         return;
     }
 
-    espnow_transport.callback([](kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) -> void {
-        (void) mac;
-        protocol_link.receive(buffer);
-    });
-
-    protocol_registry.raw().callback([](kf::Slice<kf::u8 const> buffer) -> void {
-        switch (buffer.length()) {
-            case sizeof(botix::Control::Input):
-                control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
-                return;
-
-            default:
-                return;
-        }
-    });
-
-    protocol_registry.mavlink().callback([](mavlink_message_t const &message) -> void {
-        switch (message.msgid) {
-            case MAVLINK_MSG_ID_MANUAL_CONTROL: {
-                mavlink_manual_control_t m;
-                mavlink_msg_manual_control_decode(&message, &m);
-
-                control.input(botix::Control::Input{
-                    .left_x = m.r,
-                    .left_y = m.z,
-                    .right_x = m.y,
-                    .right_y = m.x,
-                });
-
-                break;
-            }
-        }
-    });
+    espnow_transport.callback(onTransportReceive);
+    protocol_registry.raw().callback(onRawProtocolReceive);
+    protocol_registry.mavlink().callback(onMavlinkProtocolReceive);
 
     protocol_link.protocol(protocol_registry.mavlink());
 
@@ -104,29 +132,7 @@ void kf::main(kf::Init &init) {
         {
             while (init.io.availableForRead() > 0) {
                 if (auto const read = init.io.readPacket<char>(); read.isOk()) {
-                    char const c = read.ok();
-
-                    switch (c) {
-                        case 'o': {
-                            init.logger.debug(
-                                "Encoders: \tL: {} \t R: {}",
-                                periphery.wheel_odometry_encoder_left.positionTicks(),
-                                periphery.wheel_odometry_encoder_right.positionTicks());
-                            break;
-                        }
-
-                        case 'r': {
-                            protocol_link.protocol(protocol_registry.raw());
-                            init.logger.debug("protocol: Raw");
-                            break;
-                        }
-
-                        case 'm': {
-                            protocol_link.protocol(protocol_registry.mavlink());
-                            init.logger.debug("protocol: Mavlink");
-                            break;
-                        }
-                    }
+                    onInputChar(init, read.ok());
                 }
             }
         }
