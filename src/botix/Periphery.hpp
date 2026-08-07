@@ -3,15 +3,16 @@
 
 #pragma once
 
-#include <kf/math/units.hpp>
+#include <kf/gpio.hpp>
+#include <kf/units.hpp>
+
+#include <kf/driver/actuator/DRV8871.hpp>
+#include <kf/driver/actuator/PwmPositionServo.hpp>
+#include <kf/driver/sensor/QuadratureEncoder.hpp>
+
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 #include <kf/mixin/Resettable.hpp>
-
-#include <kf/drivers/actuators/DRV8871.hpp>
-#include <kf/drivers/actuators/PwmPositionServo.hpp>
-#include <kf/drivers/sensors/QuadratureEncoder.hpp>
-#include <kf/gpio/ArduinoGPIO.hpp>
 
 namespace botix {
 
@@ -22,68 +23,32 @@ struct Periphery :
     kf::mixin::Initable<Periphery, bool()>
 
 {
-    using GPIO = kf::gpio::ArduinoGPIO;
-
     /// @brief DRV8871 motor driver bound to the Arduino PWM backend
-    using MotorDriver = kf::drivers::actuators::DRV8871<GPIO::PwmOutput>;
+    using MotorDriver = kf::driver::actuator::DRV8871;
 
     /// @brief MG90S driver with the Arduino PWM backend
-    using PwmServo = kf::drivers::actuators::PwmPositionServo<GPIO::PwmOutput>;
+    using PwmServo = kf::driver::actuator::PwmPositionServo;
 
     /// @brief Wheel odometry encoder
     /// @details This alias configures the generic QuadratureEncoder to output linear wheel travel in millimeters.
     /// @note The conversion from encoder ticks to millimeters relies on the `units_per_tick` configuration,
     ///       which must reflect the entire kinematic chain (gear ratio, wheel circumference).
-    using WheelOdometerEncoder = kf::drivers::sensors::QuadratureEncoder<kf::math::Millimeters>;
+    using WheelOdometerEncoder = kf::driver::sensor::QuadratureEncoder<kf::units::Millimeters>;
 
     /// @brief Configuration aggregate for all hardware peripherals of the Botix robot
     struct Config : kf::mixin::Resettable<Config> {
 
         // actuators
 
-        // motor: gpio
-
-        MotorDriver::PwmOutputImpl::Config
-            motor_driver_left_pwm_forward,
-            motor_driver_left_pwm_backward,
-            motor_driver_right_pwm_forward,
-            motor_driver_right_pwm_backward;
-
         MotorDriver::Config motor_driver;
 
-        // servo
-
-        PwmServo::PwmPinImpl::Config
-            servo_claw_gpio,
-            servo_arm_gpio;
-
-        PwmServo::Config
-            servo;
+        PwmServo::Config servo;
 
         // sensors
-
-        // wheel odometry
 
         WheelOdometerEncoder::Config
             wheel_odometry_encoder_left,
             wheel_odometry_encoder_right;
-
-        static constexpr void resetMotorGpio(MotorDriver::PwmOutputImpl::Config &config) noexcept {
-            config.frequency_hz = 20000;
-            config.resolution_bits = 8;
-        }
-
-        static constexpr void resetServoGpio(PwmServo::PwmPinImpl::Config &config) noexcept {
-            config.frequency_hz = 50;
-            config.resolution_bits = 12;
-        }
-
-        /// @brief Default factory settings matching the standard Botix wiring
-        [[nodiscard]] static auto defaults() noexcept {
-            Config config{};
-            config.reset();
-            return config;
-        }
 
     private:
         KF_IMPL_RESETTABLE(Config);
@@ -91,66 +56,25 @@ struct Periphery :
 
             // actuators
 
-            // motors: common
-
             motor_driver.max_input = 1000;
-            motor_driver.forward_dead_zone = 10;
-            motor_driver.backward_dead_zone = 10;
-
-            // motors: left
-
-            motor_driver_left_pwm_forward.pin = GPIO_NUM_32;
-            motor_driver_left_pwm_forward.channel = 0;
-            resetMotorGpio(motor_driver_left_pwm_forward);
-
-            motor_driver_left_pwm_backward.pin = GPIO_NUM_33;
-            motor_driver_left_pwm_backward.channel = 1;
-            resetMotorGpio(motor_driver_left_pwm_backward);
-
-            // motors: right
-
-            motor_driver_right_pwm_forward.pin = GPIO_NUM_25;
-            motor_driver_right_pwm_forward.channel = 2;
-            resetMotorGpio(motor_driver_right_pwm_forward);
-
-            motor_driver_right_pwm_backward.pin = GPIO_NUM_26;
-            motor_driver_right_pwm_backward.channel = 3;
-            resetMotorGpio(motor_driver_right_pwm_backward);
-
-            // servo: common
+            motor_driver.duty_dead_zone = 10;
+            motor_driver.pwm.frequency_hz = 20000;
+            motor_driver.pwm.resolution_bits = 8;
 
             servo.angle_range.start = 0;
             servo.angle_range.end = 180;
             servo.pulse_range.start = 500;
             servo.pulse_range.end = 2500;
-
-            // servo: claw
-
-            servo_claw_gpio.pin = GPIO_NUM_13;
-            servo_claw_gpio.channel = 4;
-            resetServoGpio(servo_claw_gpio);
-
-            // servo: arm
-
-            servo_arm_gpio.pin = GPIO_NUM_14;
-            servo_arm_gpio.channel = 5;
-            resetServoGpio(servo_arm_gpio);
+            servo.pwm.frequency_hz = 50,
+            servo.pwm.resolution_bits = 12;
 
             // sensors
 
-            // odometry encoder: left
-
-            wheel_odometry_encoder_left.gpio_num_phase_a = GPIO_NUM_36;
-            wheel_odometry_encoder_left.gpio_num_phase_b = GPIO_NUM_39;
-            wheel_odometry_encoder_left.positive_direction = WheelOdometerEncoder::Config::Direction::CCW;
             wheel_odometry_encoder_left.units_per_tick = 1;
+            wheel_odometry_encoder_left.pull = kf::gpio::DigitalInput::Pull::External;
 
-            // odometry encoder: right
-
-            wheel_odometry_encoder_right.gpio_num_phase_a = GPIO_NUM_34;
-            wheel_odometry_encoder_right.gpio_num_phase_b = GPIO_NUM_35;
-            wheel_odometry_encoder_right.positive_direction = WheelOdometerEncoder::Config::Direction::CW;
             wheel_odometry_encoder_right.units_per_tick = 1;
+            wheel_odometry_encoder_right.pull = kf::gpio::DigitalInput::Pull::External;
         }
     };
 
@@ -165,26 +89,26 @@ struct Periphery :
 
     MotorDriver motor_driver_left{
         config.motor_driver,
-        MotorDriver::PwmOutputImpl{config.motor_driver_left_pwm_forward},
-        MotorDriver::PwmOutputImpl{config.motor_driver_left_pwm_backward},
+        kf::gpio::G32,
+        kf::gpio::G33,
     };
 
     MotorDriver motor_driver_right{
         config.motor_driver,
-        MotorDriver::PwmOutputImpl{config.motor_driver_right_pwm_forward},
-        MotorDriver::PwmOutputImpl{config.motor_driver_right_pwm_backward},
+        kf::gpio::G25,
+        kf::gpio::G26,
     };
 
     // servos
 
     PwmServo servo_claw{
         config.servo,
-        PwmServo::PwmPinImpl{config.servo_claw_gpio},
+        kf::gpio::G13,
     };
 
     PwmServo servo_arm{
         config.servo,
-        PwmServo::PwmPinImpl{config.servo_arm_gpio},
+        kf::gpio::G14,
         // safe range
         PwmServo::Config::AngleRange{
             .start = 135,
@@ -194,14 +118,18 @@ struct Periphery :
 
     // sensors
 
-    // odometry encoders
+    // wheel odometry encoders
 
     WheelOdometerEncoder wheel_odometry_encoder_left{
         config.wheel_odometry_encoder_left,
+        // CCW direction
+        kf::gpio::G36, kf::gpio::G39,
     };
 
     WheelOdometerEncoder wheel_odometry_encoder_right{
         config.wheel_odometry_encoder_right,
+        // CW direction
+        kf::gpio::G35, kf::gpio::G34,
     };
 
 private:

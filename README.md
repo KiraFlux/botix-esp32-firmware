@@ -82,8 +82,8 @@ This is only intended for hardware validation and will be replaced by a permanen
 |                 |                      |       |      |                        |
 | **Encoder R**   | JGA25 (Hall encoder) |   1   |  VCC | Devboard‑3V3           |
 |                 |                      |   2   |  GND | Devboard‑GND           |
-|                 |                      |   3   |    A | Devboard‑GPIO_34       |
-|                 |                      |   4   |    B | Devboard‑GPIO_35       |
+|                 |                      |   3   |    A | Devboard‑GPIO_35       |
+|                 |                      |   4   |    B | Devboard‑GPIO_34       |
 
 <blockquote>
 

@@ -1,16 +1,18 @@
 // Copyright (c) 2026 KiraFlux
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <Arduino.h>
+#include <kf/main.hpp>
+#include <kf/rtos/Clock.hpp>
+#include <kf/rtos/Task.hpp>
 
 #include <kf/Logger.hpp>
-#include <kf/math/units.hpp>
+#include <kf/units.hpp>
 
 #include "botix/Control.hpp"
 #include "botix/OperatorTerminal.hpp"
 #include "botix/Periphery.hpp"
 
-static auto periphery_config{botix::Periphery::Config::defaults()};
+static botix::Periphery::Config periphery_config{};
 
 static botix::Periphery periphery{
     periphery_config,
@@ -24,16 +26,13 @@ static botix::OperatorTerminal operator_terminal{
     control,
 };
 
-void setup() {
-    constexpr auto logger{kf::Logger::create("setup")};
-    kf::Logger::writer = [](kf::memory::StringView str) { Serial.write(str.data(), str.size()); };
+void kf::main(kf::Init &init) {
+    init.logger.debug("starting");
 
-    Serial.begin(115200);
-
-    logger.debug("starting");
+    periphery_config.reset();// set to defaults
 
     if (not periphery.init()) {
-        logger.error("Periphery init failed");
+        init.logger.error("Periphery init failed");
         return;
     }
 
@@ -41,18 +40,20 @@ void setup() {
     periphery.motor_driver_right.stop();
 
     if (not operator_terminal.init()) {
-        logger.warn("Operator Terminal init failed");
+        init.logger.warn("Operator Terminal init failed");
     }
 
-    logger.info("Ready");
-}
+    init.logger.info("Ready");
 
-void loop() {
-    constexpr auto loop_period{1000 / 100};// 100 Hz Loop rate
+    while (true) {
+        constexpr auto loop_period{1000 / 100};// 10 Hz Loop rate
 
-    const auto now{static_cast<kf::math::Milliseconds>(millis())};
-    operator_terminal.poll(now);
-    control.poll(now);
+        const auto now = rtos::Clock::now();
+        operator_terminal.poll(now);
+        control.poll(now);
 
-    delay(loop_period);
+        rtos::Task::sleep(loop_period);
+
+        init.logger.debug("L: {}, R: {}", periphery.wheel_odometry_encoder_left.positionTicks(), periphery.wheel_odometry_encoder_right.positionTicks());
+    }
 }

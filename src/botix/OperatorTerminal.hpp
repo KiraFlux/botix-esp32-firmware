@@ -7,12 +7,14 @@
 
 #include <kf/Logger.hpp>
 #include <kf/Option.hpp>
-#include <kf/math/Timer.hpp>
-#include <kf/math/units.hpp>
+#include <kf/Timer.hpp>
+#include <kf/units.hpp>
+#include <kf/esp/Espnow.hpp>
+#include <kf/MacAddress.hpp>
+
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 #include <kf/mixin/TimedPollable.hpp>
-#include <kf/network/EspNow.hpp>
 
 #include "botix/Control.hpp"
 
@@ -27,31 +29,31 @@ struct OperatorTerminal final :
     ::kf::mixin::TimedPollable<OperatorTerminal>
 
 {
+    using Self = OperatorTerminal;
+
     explicit OperatorTerminal(Control &control) noexcept :
         _control{control} {}
 
 private:
-    using EspNow = ::kf::network::EspNow;
+    using Espnow = kf::esp::Espnow;
 
-    static constexpr auto logger{kf::Logger::create("OperatorTerminal")};
+    inline static kf::Logger logger{"OperatorTerminal"};
 
-    static constexpr kf::math::Timer::Config heartbeat_timer_config{.period = 1000};
+    static constexpr kf::Timer::Config heartbeat_timer_config{.value = 1000};
 
     Control &_control;
-    kf::Option<EspNow::Peer> _broadcast_peer{};
-    kf::math::Timer _heartbeat_timer{heartbeat_timer_config};
+    kf::Option<Espnow::Peer> _broadcast_peer{};
+    kf::Timer _heartbeat_timer{heartbeat_timer_config};
 
-    // impl
-    using This = OperatorTerminal;
 
-    KF_IMPL_INITABLE(This, bool());
+    KF_IMPL_INITABLE(Self, bool());
     bool initImpl() noexcept {
         if (not WiFi.mode(WIFI_MODE_STA)) {
             logger.error("WiFi mode failed");
             return false;
         }
 
-        auto &espnow = EspNow::instance();
+        auto &espnow = Espnow::instance();
 
         const auto init_result = espnow.init();
         if (init_result.isError()) {
@@ -59,8 +61,8 @@ private:
             return false;
         }
 
-        espnow.callback([this](const kf::network::MacAddress &mac, kf::Slice<const kf::u8> buffer) -> void {
-            switch (buffer.size()) {
+        espnow.callback([this](const kf::MacAddress &mac, kf::Slice<const kf::u8> buffer) -> void {
+            switch (buffer.length()) {
                 case sizeof(Control::Input):
                     _control.input(*reinterpret_cast<const Control::Input *>(buffer.data()));
                     return;
@@ -70,7 +72,7 @@ private:
             }
         });
 
-        auto peer_result = EspNow::Peer::create({
+        auto peer_result = Espnow::Peer::create({
             .mac_address = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
             .wifi_interface_sta = true,
         });
@@ -84,8 +86,8 @@ private:
         return true;
     }
 
-    KF_IMPL_TIMED_POLLABLE(This);
-    void pollImpl(kf::math::Milliseconds now) noexcept {
+    KF_IMPL_TIMED_POLLABLE(Self);
+    void pollImpl(kf::units::Milliseconds now) noexcept {
         if (_heartbeat_timer.expired(now)) {
             _heartbeat_timer.start(now);
 
