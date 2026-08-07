@@ -16,7 +16,6 @@
 
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/TimedPollable.hpp>
 
 #include "botix/Control.hpp"
 
@@ -25,8 +24,7 @@ namespace botix::transport {
 struct EspnowTransport final :
 
     kf::mixin::Initable<EspnowTransport, bool()>,
-    kf::mixin::NonCopyable,
-    kf::mixin::TimedPollable<EspnowTransport>
+    kf::mixin::NonCopyable
 
 {
     using Self = EspnowTransport;
@@ -35,15 +33,26 @@ struct EspnowTransport final :
         Espnow::instance().callback(std::forward<decltype(f)>(f));
     }
 
+    [[nodiscard]] bool sendPacket(auto const &packet) noexcept {
+        if (_broadcast_peer.isSome()) {
+            return _broadcast_peer.unwrap().writePacket(packet).isOk();
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool sendBuffer(kf::Slice<kf::u8 const> buffer) noexcept {
+        if (_broadcast_peer.isSome()) {
+            return _broadcast_peer.unwrap().writeBuffer(buffer).isOk();
+        }
+        return false;
+    }
+
 private:
     using Espnow = kf::esp::Espnow;
 
     inline static kf::Logger logger{"EspnowTransport"};
 
-    static constexpr kf::Timer::Config heartbeat_timer_config{.value = 2000};
-
     kf::Option<Espnow::Peer> _broadcast_peer{};
-    kf::Timer _heartbeat_timer{heartbeat_timer_config};
 
     KF_IMPL_INITABLE(Self, bool());
     bool initImpl() noexcept {
@@ -72,17 +81,6 @@ private:
         }
 
         return true;
-    }
-
-    KF_IMPL_TIMED_POLLABLE(Self);
-    void pollImpl(kf::units::Milliseconds now) noexcept {
-        if (_heartbeat_timer.expired(now)) {
-            _heartbeat_timer.start(now);
-
-            if (_broadcast_peer.isSome()) {
-                (void) _broadcast_peer.unwrap().writeByte(0xAA);
-            }
-        }
     }
 };
 

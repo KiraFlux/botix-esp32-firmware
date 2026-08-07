@@ -14,13 +14,16 @@
 
 #include "botix/transport/EspnowTransport.hpp"
 
-#include "botix/protocol/RawProtocol.hpp"
+#include "botix/protocol/ProtocolLink.hpp"
+#include "botix/protocol/ProtocolRegistry.hpp"
 
 static botix::RootConfig root_config{};
 
 static botix::transport::EspnowTransport espnow_transport{};
 
-static botix::protocol::RawProtocol raw_protocol{};
+static botix::protocol::ProtocolRegistry protocol_registry{};
+
+static botix::protocol::ProtocolLink protocol_link{};
 
 static botix::Periphery periphery{
     root_config.periphery,
@@ -47,10 +50,10 @@ void kf::main(kf::Init &init) {
 
     espnow_transport.callback([](kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) -> void {
         (void) mac;
-        raw_protocol.receive(buffer);
+        protocol_link.receive(buffer);
     });
 
-    raw_protocol.callback([](kf::Slice<kf::u8 const> buffer) -> void {
+    protocol_registry.raw().callback([](kf::Slice<kf::u8 const> buffer) -> void {
         switch (buffer.length()) {
             case sizeof(botix::Control::Input):
                 control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
@@ -61,6 +64,26 @@ void kf::main(kf::Init &init) {
         }
     });
 
+    protocol_registry.mavlink().callback([](mavlink_message_t const &message) -> void {
+        switch (message.msgid) {
+            case MAVLINK_MSG_ID_MANUAL_CONTROL: {
+                mavlink_manual_control_t m;
+                mavlink_msg_manual_control_decode(&message, &m);
+
+                control.input(botix::Control::Input{
+                    .left_x = m.r,
+                    .left_y = m.z,
+                    .right_x = m.y,
+                    .right_y = m.x,
+                });
+
+                break;
+            }
+        }
+    });
+
+    protocol_link.protocol(protocol_registry.mavlink());
+
     init.logger.info("Ready");
 
     while (true) {
@@ -68,7 +91,7 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
-        espnow_transport.poll(now);
+        protocol_link.poll(now, espnow_transport);
         control.poll(now);
 
         {
@@ -81,11 +104,28 @@ void kf::main(kf::Init &init) {
         {
             while (init.io.availableForRead() > 0) {
                 if (auto const read = init.io.readPacket<char>(); read.isOk()) {
-                    if (read.ok() == 'e') {
-                        init.logger.debug(
-                            "Encoders: \tL: {} \t R: {}",
-                            periphery.wheel_odometry_encoder_left.positionTicks(),
-                            periphery.wheel_odometry_encoder_right.positionTicks());
+                    char const c = read.ok();
+
+                    switch (c) {
+                        case 'o': {
+                            init.logger.debug(
+                                "Encoders: \tL: {} \t R: {}",
+                                periphery.wheel_odometry_encoder_left.positionTicks(),
+                                periphery.wheel_odometry_encoder_right.positionTicks());
+                            break;
+                        }
+
+                        case 'r': {
+                            protocol_link.protocol(protocol_registry.raw());
+                            init.logger.debug("protocol: Raw");
+                            break;
+                        }
+
+                        case 'm': {
+                            protocol_link.protocol(protocol_registry.mavlink());
+                            init.logger.debug("protocol: Mavlink");
+                            break;
+                        }
                     }
                 }
             }
