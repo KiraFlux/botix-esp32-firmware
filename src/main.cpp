@@ -16,15 +16,22 @@
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
 
-#include "botix/transport/Registry.hpp"
+#include "botix/transport/Address.hpp"
 #include "botix/transport/Link.hpp"
+#include "botix/transport/Receiver.hpp"
+#include "botix/transport/Registry.hpp"
 
 #include "botix/protocol/Link.hpp"
 #include "botix/protocol/Registry.hpp"
 
+static char test_log_buffer[256];
+static kf::Logger test_log{"test", {test_log_buffer}};
+
 static botix::RootConfig root_config{};
 
 static botix::transport::Registry transport_registry{};
+
+static botix::transport::Receiver transport_receiver{};
 
 static botix::transport::Link transport_link{};
 
@@ -40,12 +47,28 @@ static botix::Control control{
     root_config.control,
 };
 
-void onTransportReceive(kf::MacAddress const &mac, kf::BytesView buffer) {
-    (void) mac;
-    protocol_link.receive(buffer);
+void onTransportReceive(botix::transport::Address const &address, kf::BytesView buffer) {
+    protocol_link.receive(address, buffer);
+
+    test_log.debug("onTransportReceive: {}", buffer.length());
 }
 
-void onRawProtocolReceive(kf::BytesView buffer) {
+void onTransportReceiveForeign(botix::transport::Address const &address, kf::BytesView buffer) {
+    test_log.debug("Found device");
+
+    if (transport_link.connected()) {
+        test_log.error("connect denied (already connected)");
+        return;
+    }
+
+    if (not transport_link.connect(address)) {
+        test_log.error("transport_link.connect failed");
+    }
+}
+
+void onRawProtocolReceive(botix::transport::Address const &address, kf::BytesView buffer) {
+    (void) address;
+
     switch (buffer.length()) {
         case sizeof(botix::Control::Input):
             control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
@@ -56,7 +79,9 @@ void onRawProtocolReceive(kf::BytesView buffer) {
     }
 }
 
-void onMavlinkProtocolReceive(mavlink_message_t const &message) {
+void onMavlinkProtocolReceive(botix::transport::Address const &address, mavlink_message_t const &message) {
+    (void) address;
+
     switch (message.msgid) {
         case MAVLINK_MSG_ID_MANUAL_CONTROL: {
             mavlink_manual_control_t m;
@@ -114,14 +139,19 @@ void kf::main(kf::Init &init) {
     }
 
     if (not transport_registry.espnow().init()) {
-        init.logger.warn("EspnowTransport init failed");
+        init.logger.error("EspnowTransport init failed");
         return;
     }
 
-    // espnow_transport.callback(onTransportReceive);
+    transport_receiver.onReceive(onTransportReceive);
+    transport_receiver.onReceiveForeign(onTransportReceiveForeign);
+
+    transport_registry.espnow().receiver(kf::someRef(transport_receiver));
+
+    transport_link.set(transport_registry.espnow());
+
     protocol_registry.raw().callback(onRawProtocolReceive);
     protocol_registry.mavlink().callback(onMavlinkProtocolReceive);
-
     protocol_link.set(protocol_registry.mavlink());
 
     init.logger.info("Ready");
@@ -131,6 +161,7 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
+        transport_link.poll(now);
         protocol_link.poll(now, transport_link);
         control.poll(now);
 

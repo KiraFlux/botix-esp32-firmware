@@ -3,57 +3,26 @@
 
 #pragma once
 
-#include <utility>
-
 #include <kf/BytesView.hpp>
-#include <kf/Function.hpp>
 #include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
+#include <kf/units.hpp>
 
-#include <kf/mixin/Callbacked.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 
 #include "botix/transport/Address.hpp"
-
-namespace botix::internal {
-
-struct TransportOnReceiveCallback : private kf::mixin::Callbacked<void(kf::BytesView)> {
-    void onReceive(auto &&f) noexcept {
-        this->callback(std::forward<decltype(f)>(f));
-    }
-
-protected:
-    void invokeReceiveCallback(kf::BytesView buffer) noexcept {
-        this->invoke(buffer);
-    }
-};
-
-struct TransportOnReceiveForeignCallback : private kf::mixin::Callbacked<void(transport::Address const &, kf::BytesView)> {
-    void onReceiveForeign(auto &&f) noexcept {
-        this->callback(std::forward<decltype(f)>(f));
-    }
-
-protected:
-    void invokeReceiveForeignCallback(transport::Address const &address, kf::BytesView buffer) noexcept {
-        this->invoke(address, buffer);
-    }
-};
-
-}// namespace botix::internal
+#include "botix/transport/Receiver.hpp"
 
 namespace botix::transport {
 
-struct Transport :
+struct Transport : kf::mixin::NonCopyable {
 
-    kf::mixin::NonCopyable,
-    internal::TransportOnReceiveCallback,
-    internal::TransportOnReceiveForeignCallback
-
-{
     explicit constexpr Transport(Kind kind) noexcept :
         _kind{kind} {}
 
     // dynamic interface
+
+    virtual void poll(kf::units::Milliseconds now) noexcept = 0;
 
     [[nodiscard]] virtual bool send(kf::BytesView buffer) noexcept = 0;
 
@@ -71,6 +40,14 @@ public:
 
     [[nodiscard]] constexpr auto activeAddress() const noexcept -> kf::Option<Address const &> {
         return _active_connection_address.isNone() ? kf::none : kf::someRef(_active_connection_address.unwrap());
+    }
+
+    [[nodiscard]] constexpr auto receiver() noexcept -> kf::Option<Receiver &> {
+        return _receiver;
+    }
+
+    constexpr void receiver(kf::Option<Receiver &> new_receiver) noexcept {
+        _receiver = new_receiver;
     }
 
     // control
@@ -104,6 +81,7 @@ public:
 
 private:
     kf::Option<Address> _active_connection_address{kf::none};
+    kf::Option<Receiver &> _receiver{kf::none};
     Kind const _kind;
 };
 

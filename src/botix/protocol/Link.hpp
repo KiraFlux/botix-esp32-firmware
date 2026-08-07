@@ -10,6 +10,7 @@
 #include <kf/mixin/NonCopyable.hpp>
 
 #include "botix/transport/Link.hpp"
+#include "botix/transport/Address.hpp"
 
 #include "botix/protocol/Protocol.hpp"
 
@@ -28,9 +29,9 @@ struct Link : kf::mixin::NonCopyable {
         }
     }
 
-    void receive(kf::BytesView buffer) noexcept {
+    void receive(const transport::Address &address, kf::BytesView buffer) noexcept {
         if (_protocol.isSome()) {
-            _protocol.unwrap().receive(buffer);
+            _protocol.unwrap().receive(address, buffer);
         }
     }
 

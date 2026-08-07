@@ -4,7 +4,6 @@
 #pragma once
 
 #include <algorithm>
-#include <utility>
 
 #include <kf/BytesView.hpp>
 #include <kf/NoneType.hpp>
@@ -14,6 +13,7 @@
 
 #include <kf/mixin/BinaryWritable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
+#include <kf/mixin/TimedPollable.hpp>
 
 #include "botix/transport/Address.hpp"
 #include "botix/transport/Transport.hpp"
@@ -23,6 +23,7 @@ namespace botix::transport {
 struct Link final :
 
     kf::mixin::NonCopyable,
+    kf::mixin::TimedPollable<Link>,
     kf::mixin::BinaryWritable<Link, bool>
 
 {
@@ -36,6 +37,8 @@ struct Link final :
         _transport = kf::someRef(new_transport);
     }
 
+    // properties
+
     [[nodiscard]] constexpr bool connected() const noexcept {
         return _transport.isSome() and _transport.unwrap().connected();
     }
@@ -43,6 +46,8 @@ struct Link final :
     [[nodiscard]] constexpr auto activeAddress() const noexcept -> kf::Option<Address const &> {
         return _transport.isSome() ? kf::none : _transport.unwrap().activeAddress();
     }
+
+    // control
 
     [[nodiscard]] bool connect(Address const &address) noexcept {
         if (_transport.isNone()) {
@@ -62,6 +67,15 @@ struct Link final :
 
 private:
     kf::Option<Transport &> _transport{kf::none};
+
+    KF_IMPL_TIMED_POLLABLE(Self);
+    void pollImpl(kf::units::Milliseconds now) noexcept {
+        if (_transport.isNone()) {
+            return;
+        }
+
+        _transport.unwrap().poll(now);
+    }
 
     KF_IMPL_BINARY_WRITABLE(Self, bool);
 

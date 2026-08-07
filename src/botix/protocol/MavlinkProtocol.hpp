@@ -11,13 +11,14 @@
 
 #include <kf/mixin/Callbacked.hpp>
 
+#include "botix/transport/Address.hpp"
 #include "botix/transport/Link.hpp"
 
 #include "botix/protocol/Protocol.hpp"
 
 namespace botix::protocol {
 
-struct MavlinkProtocol : Protocol, kf::mixin::Callbacked<void(mavlink_message_t const &)> {
+struct MavlinkProtocol : Protocol, kf::mixin::Callbacked<void(transport::Address const &, mavlink_message_t const &)> {
 
     [[nodiscard]] static bool sendMessage(transport::Link &transport_link, mavlink_message_t const &message) noexcept {
         kf::u8 buffer[MAVLINK_MAX_PACKET_LEN];
@@ -31,18 +32,21 @@ struct MavlinkProtocol : Protocol, kf::mixin::Callbacked<void(mavlink_message_t 
 
         if (_heartbeat_timer.expired(now)) {
             _heartbeat_timer.start(now);
-            
+
             (void) sendHeartbeat(transport_link);
         }
     }
 
-    void receive(kf::BytesView buffer) noexcept override {
+    void receive(transport::Address const &address, kf::BytesView buffer) noexcept override {
         mavlink_message_t message;
         mavlink_status_t status;
 
+        // separate channels for each transport kind
+        auto const channel = static_cast<mavlink_channel_t>(static_cast<int>(address.kind()));
+
         for (auto b: buffer) {
-            if (mavlink_parse_char(MAVLINK_COMM_0, b, &message, &status) != 0) {
-                this->invoke(message);
+            if (mavlink_parse_char(channel, b, &message, &status) != 0) {
+                this->invoke(address, message);
             }
         }
     }

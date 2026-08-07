@@ -9,13 +9,14 @@
 
 #include <kf/mixin/Callbacked.hpp>
 
+#include "botix/transport/Address.hpp"
 #include "botix/transport/Link.hpp"
 
 #include "botix/protocol/Protocol.hpp"
 
 namespace botix::protocol {
 
-struct RawProtocol : Protocol, kf::mixin::Callbacked<void(kf::BytesView)> {
+struct RawProtocol : Protocol, kf::mixin::Callbacked<void(transport::Address const &address, kf::BytesView)> {
 
     void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept override {
         // TODO: bulk send telemetry here
@@ -27,8 +28,8 @@ struct RawProtocol : Protocol, kf::mixin::Callbacked<void(kf::BytesView)> {
         }
     }
 
-    void receive(kf::BytesView buffer) noexcept override {
-        this->invoke(buffer);
+    void receive(transport::Address const &address, kf::BytesView buffer) noexcept override {
+        this->invoke(address, buffer);
     }
 
 private:
