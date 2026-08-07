@@ -20,7 +20,7 @@
 
 #include "botix/Control.hpp"
 
-namespace botix {
+namespace botix::transport {
 
 struct EspnowTransport final :
 

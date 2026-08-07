@@ -23,7 +23,7 @@ static botix::Control control{
     root_config.control,
 };
 
-static botix::EspnowTransport espnow_transport{};
+static botix::transport::EspnowTransport espnow_transport{};
 
 static void onTransportReceive(kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) {
     switch (buffer.length()) {
