@@ -3,10 +3,11 @@
 
 #pragma once
 
-#include "botix/transport/EspnowTransport.hpp"
-
 namespace botix::transport {
 
-using TransportLink = EspnowTransport;
+enum class Kind : unsigned char {
+    Espnow = 0x00,
+    Wifi = 0x01,
+};
 
 }

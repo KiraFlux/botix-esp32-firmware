@@ -1,10 +1,14 @@
 // Copyright (c) 2026 KiraFlux
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <MAVLink.h>
+#include <WiFi.h>
+
 #include <kf/main.hpp>
 #include <kf/rtos/Clock.hpp>
 #include <kf/rtos/Task.hpp>
 
+#include <kf/BytesView.hpp>
 #include <kf/Logger.hpp>
 #include <kf/units.hpp>
 
@@ -12,18 +16,21 @@
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
 
-#include "botix/transport/EspnowTransport.hpp"
+#include "botix/transport/Registry.hpp"
+#include "botix/transport/Link.hpp"
 
-#include "botix/protocol/ProtocolLink.hpp"
-#include "botix/protocol/ProtocolRegistry.hpp"
+#include "botix/protocol/Link.hpp"
+#include "botix/protocol/Registry.hpp"
 
 static botix::RootConfig root_config{};
 
-static botix::transport::EspnowTransport espnow_transport{};
+static botix::transport::Registry transport_registry{};
 
-static botix::protocol::ProtocolRegistry protocol_registry{};
+static botix::transport::Link transport_link{};
 
-static botix::protocol::ProtocolLink protocol_link{};
+static botix::protocol::Registry protocol_registry{};
+
+static botix::protocol::Link protocol_link{};
 
 static botix::Periphery periphery{
     root_config.periphery,
@@ -33,12 +40,12 @@ static botix::Control control{
     root_config.control,
 };
 
-void onTransportReceive(kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) {
+void onTransportReceive(kf::MacAddress const &mac, kf::BytesView buffer) {
     (void) mac;
     protocol_link.receive(buffer);
 }
 
-void onRawProtocolReceive(kf::Slice<kf::u8 const> buffer) {
+void onRawProtocolReceive(kf::BytesView buffer) {
     switch (buffer.length()) {
         case sizeof(botix::Control::Input):
             control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
@@ -78,13 +85,13 @@ void onInputChar(kf::Init &init, char c) {
         }
 
         case 'r': {
-            protocol_link.protocol(protocol_registry.raw());
+            protocol_link.set(protocol_registry.raw());
             init.logger.debug("protocol: Raw");
             return;
         }
 
         case 'm': {
-            protocol_link.protocol(protocol_registry.mavlink());
+            protocol_link.set(protocol_registry.mavlink());
             init.logger.debug("protocol: Mavlink");
             return;
         }
@@ -101,16 +108,21 @@ void kf::main(kf::Init &init) {
         return;
     }
 
-    if (not espnow_transport.init()) {
+    if (not WiFi.mode(WIFI_MODE_STA)) {
+        init.logger.error("WiFi mode failed");
+        return;
+    }
+
+    if (not transport_registry.espnow().init()) {
         init.logger.warn("EspnowTransport init failed");
         return;
     }
 
-    espnow_transport.callback(onTransportReceive);
+    // espnow_transport.callback(onTransportReceive);
     protocol_registry.raw().callback(onRawProtocolReceive);
     protocol_registry.mavlink().callback(onMavlinkProtocolReceive);
 
-    protocol_link.protocol(protocol_registry.mavlink());
+    protocol_link.set(protocol_registry.mavlink());
 
     init.logger.info("Ready");
 
@@ -119,7 +131,7 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
-        protocol_link.poll(now, espnow_transport);
+        protocol_link.poll(now, transport_link);
         control.poll(now);
 
         {

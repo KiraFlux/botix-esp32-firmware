@@ -5,62 +5,83 @@
 
 #include <utility>
 
-#include <WiFi.h>
-
+#include <kf/BytesView.hpp>
 #include <kf/Logger.hpp>
 #include <kf/MacAddress.hpp>
+#include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
-#include <kf/Timer.hpp>
 #include <kf/esp/Espnow.hpp>
-#include <kf/units.hpp>
 
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 
-#include "botix/Control.hpp"
+#include "botix/transport/Address.hpp"
+#include "botix/transport/Transport.hpp"
 
 namespace botix::transport {
 
 struct EspnowTransport final :
 
-    kf::mixin::Initable<EspnowTransport, bool()>,
-    kf::mixin::NonCopyable
+    Transport,
+    kf::mixin::Initable<EspnowTransport, bool()>
 
 {
     using Self = EspnowTransport;
 
-    void callback(auto &&f) noexcept {
-        Espnow::instance().callback(std::forward<decltype(f)>(f));
+    constexpr EspnowTransport() noexcept :
+        Transport{Kind::Espnow} {}
+
+    bool send(kf::BytesView buffer) noexcept override {
+        if (_active_peer.isSome()) {
+            return _active_peer.unwrap().writeBuffer(buffer).isOk();
+        } else {
+            return false;
+        }
     }
 
-    [[nodiscard]] bool sendPacket(auto const &packet) noexcept {
-        if (_broadcast_peer.isSome()) {
-            return _broadcast_peer.unwrap().writePacket(packet).isOk();
+protected:
+    bool doConnect(Address const &address) noexcept override {
+        auto peer_result = Espnow::Peer::create({
+            .mac_address = address.mac(),
+            .wifi_interface_sta = true,
+        });
+
+        if (peer_result.isError()) {
+            logger.error("Espnow peer add failed: {}", peer_result.error());
+            return false;
         }
-        return false;
+
+        _active_peer = kf::some(std::move(peer_result.ok()));
+        return true;
     }
 
-    [[nodiscard]] bool sendBuffer(kf::Slice<kf::u8 const> buffer) noexcept {
-        if (_broadcast_peer.isSome()) {
-            return _broadcast_peer.unwrap().writeBuffer(buffer).isOk();
+    void doDisconnect() noexcept override {
+        if (not connected()) {
+            logger.warn("Disconnect failed: No active peer");
+            return;
         }
-        return false;
+
+        auto &peer = _active_peer.unwrap();
+        if (not peer.exist()) {
+            logger.error("Disconnect failed: Peer not exit");
+            return;
+        }
+
+        _active_peer.reset();
+        logger.info("Disconnected: OK");
     }
 
 private:
     using Espnow = kf::esp::Espnow;
 
-    inline static kf::Logger logger{"EspnowTransport"};
+    inline static char logger_buffer[64];
 
-    kf::Option<Espnow::Peer> _broadcast_peer{};
+    inline static kf::Logger logger{"EspnowTransport", {logger_buffer}};
+
+    kf::Option<Espnow::Peer> _active_peer{kf::none};
 
     KF_IMPL_INITABLE(Self, bool());
     bool initImpl() noexcept {
-        if (not WiFi.mode(WIFI_MODE_STA)) {
-            logger.error("WiFi mode failed");
-            return false;
-        }
-
         auto &espnow = Espnow::instance();
 
         auto const init_result = espnow.init();
@@ -69,19 +90,16 @@ private:
             return false;
         }
 
-        auto peer_result = Espnow::Peer::create({
-            .mac_address = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF},
-            .wifi_interface_sta = true,
+        espnow.callback([this](kf::MacAddress const &mac_address, kf::BytesView buffer) -> void {
+            if (_active_peer.isSome() and _active_peer.unwrap().mac() == mac_address) {
+                this->invokeReceiveCallback(buffer);
+            } else {
+                this->invokeReceiveForeignCallback(Address::createForEspnow(mac_address), buffer);
+            }
         });
-
-        if (peer_result.isOk()) {
-            _broadcast_peer = kf::some(std::move(peer_result.ok()));
-        } else {
-            logger.error("Espnow peer add failed: {}", peer_result.error());
-        }
 
         return true;
     }
 };
 
-}// namespace botix
+}// namespace botix::transport
