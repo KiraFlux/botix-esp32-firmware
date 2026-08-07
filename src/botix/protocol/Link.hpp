@@ -3,33 +3,32 @@
 
 #pragma once
 
+#include <kf/BytesView.hpp>
 #include <kf/Option.hpp>
-#include <kf/Slice.hpp>
-#include <kf/primitives.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/NonCopyable.hpp>
 
-#include "botix/transport/TransportLink.hpp"
+#include "botix/transport/Link.hpp"
 
 #include "botix/protocol/Protocol.hpp"
 
 namespace botix::protocol {
 
-struct ProtocolLink : kf::mixin::NonCopyable {
+struct Link : kf::mixin::NonCopyable {
 
-    void protocol(protocol::Protocol &new_protocol) noexcept {
+    void set(protocol::Protocol &new_protocol) noexcept {
         _protocol = kf::someRef(new_protocol);
     }
 
     // TODO: add telemetry here
-    void poll(kf::units::Milliseconds now, transport::TransportLink &transport_link) noexcept {
+    void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept {
         if (_protocol.isSome()) {
             _protocol.unwrap().poll(now, transport_link);
         }
     }
 
-    void receive(kf::Slice<kf::u8 const> buffer) noexcept {
+    void receive(kf::BytesView buffer) noexcept {
         if (_protocol.isSome()) {
             _protocol.unwrap().receive(buffer);
         }
