@@ -11,9 +11,16 @@
 #include "botix/Control.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
+
 #include "botix/transport/EspnowTransport.hpp"
 
+#include "botix/protocol/RawProtocol.hpp"
+
 static botix::RootConfig root_config{};
+
+static botix::transport::EspnowTransport espnow_transport{};
+
+static botix::protocol::RawProtocol raw_protocol{};
 
 static botix::Periphery periphery{
     root_config.periphery,
@@ -22,19 +29,6 @@ static botix::Periphery periphery{
 static botix::Control control{
     root_config.control,
 };
-
-static botix::transport::EspnowTransport espnow_transport{};
-
-static void onTransportReceive(kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) {
-    switch (buffer.length()) {
-        case sizeof(botix::Control::Input):
-            control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
-            return;
-
-        default:
-            return;
-    }
-}
 
 void kf::main(kf::Init &init) {
     init.logger.debug("Starting");
@@ -51,7 +45,21 @@ void kf::main(kf::Init &init) {
         return;
     }
 
-    espnow_transport.callback(onTransportReceive);
+    espnow_transport.callback([](kf::MacAddress const &mac, kf::Slice<kf::u8 const> buffer) -> void {
+        (void) mac;
+        raw_protocol.receive(buffer);
+    });
+
+    raw_protocol.callback([](kf::Slice<kf::u8 const> buffer) -> void {
+        switch (buffer.length()) {
+            case sizeof(botix::Control::Input):
+                control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
+                return;
+
+            default:
+                return;
+        }
+    });
 
     init.logger.info("Ready");
 
