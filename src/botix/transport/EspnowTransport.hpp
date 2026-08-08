@@ -5,12 +5,12 @@
 
 #include <utility>
 
-#include <kf/Timer.hpp>
 #include <kf/BytesView.hpp>
 #include <kf/Logger.hpp>
 #include <kf/MacAddress.hpp>
 #include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
+#include <kf/Timer.hpp>
 #include <kf/esp/Espnow.hpp>
 
 #include <kf/mixin/Initable.hpp>
@@ -111,17 +111,21 @@ private:
 
         espnow.callback([this](kf::MacAddress const &mac_address, kf::BytesView buffer) -> void {
             if (auto maybe_receiver = receiver(); maybe_receiver.isSome()) {
-                auto const transport_address = Address::createForEspnow(mac_address);
+
+                Receiver::ReceiveContext const context{
+                    .address = Address::createForEspnow(mac_address),
+                    .buffer = buffer,
+                };
 
                 if (_active_peer.isSome() and _active_peer.unwrap().mac() == mac_address) {
-                    maybe_receiver.unwrap().invokeReceiveCallback(transport_address, buffer);
+                    maybe_receiver.unwrap().invokeReceiveCallback(context);
                 } else {
-                    maybe_receiver.unwrap().invokeReceiveForeignCallback(transport_address, buffer);
+                    maybe_receiver.unwrap().invokeReceiveForeignCallback(context);
                 }
             }
         });
 
-        _broadcast_peer = createPeer({0xff,0xff,0xff,0xff,0xff,0xff});
+        _broadcast_peer = createPeer({0xff, 0xff, 0xff, 0xff, 0xff, 0xff});
         return _broadcast_peer.isSome();
     }
 };

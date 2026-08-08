@@ -14,25 +14,30 @@
 
 namespace botix::internal {
 
-using OnReceiveBase = kf::mixin::Callbacked<void(transport::Address const &, kf::BytesView)>;
+struct ReceiveContext {
+    transport::Address const &address;
+    kf::BytesView buffer;
+};
+
+using OnReceiveBase = kf::mixin::Callbacked<void(ReceiveContext const &)>;
 
 struct OnReceiveCallbacked : private OnReceiveBase {
     void onReceive(auto &&f) noexcept {
         this->callback(std::forward<decltype(f)>(f));
     }
 
-    void invokeReceiveCallback(transport::Address const &address, kf::BytesView buffer) noexcept {
-        this->invoke(address, buffer);
+    void invokeReceiveCallback(ReceiveContext const &context) noexcept {
+        this->invoke(context);
     }
 };
 
-struct OnReceiveForeignCallbacked : private kf::mixin::Callbacked<void(transport::Address const &, kf::BytesView)> {
+struct OnReceiveForeignCallbacked : private OnReceiveBase {
     void onReceiveForeign(auto &&f) noexcept {
         this->callback(std::forward<decltype(f)>(f));
     }
 
-    void invokeReceiveForeignCallback(transport::Address const &address, kf::BytesView buffer) noexcept {
-        this->invoke(address, buffer);
+    void invokeReceiveForeignCallback(ReceiveContext const &context) noexcept {
+        this->invoke(context);
     }
 };
 
@@ -47,6 +52,8 @@ struct Receiver final :
     internal::OnReceiveForeignCallbacked
 
 {
+    using ReceiveContext = internal::ReceiveContext;
+
     constexpr Receiver() noexcept = default;
 };
 

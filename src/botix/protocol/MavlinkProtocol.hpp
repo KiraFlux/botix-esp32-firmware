@@ -37,8 +37,6 @@ struct MavlinkProtocol :
     void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept override {
         // TODO: bulk send telemetry here
 
-        _last_poll = now;
-
         if (_heartbeat_timer.expired(now)) {
             _heartbeat_timer.start(now);
 
@@ -46,49 +44,51 @@ struct MavlinkProtocol :
         }
     }
 
-    void receive(transport::Address const &address, kf::BytesView buffer, IncomingTelemetry &telemetry) noexcept override {
+    void receive(ReceiveContext const &context) noexcept override {
         mavlink_message_t message;
         mavlink_status_t status;
 
         // separate channels for each transport kind
-        auto const channel = static_cast<mavlink_channel_t>(static_cast<int>(address.kind()));
+        auto const channel = static_cast<mavlink_channel_t>(static_cast<int>(context.transport.address.kind()));
 
-        for (auto b: buffer) {
+        for (auto b: context.transport.buffer) {
             if (mavlink_parse_char(channel, b, &message, &status) != 0) {
-                onMessage(address, message, telemetry);
+                if (not onMessage(context, message)) {
+                    this->invoke(context.transport.address, message);
+                }
             }
         }
     }
 
-    void onMessage(transport::Address const &address, mavlink_message_t const &message, IncomingTelemetry &telemetry) noexcept {
+    [[nodiscard]] bool onMessage(ReceiveContext const &context, mavlink_message_t const &message) noexcept {
         switch (message.msgid) {
             case MAVLINK_MSG_ID_MANUAL_CONTROL: {
                 mavlink_manual_control_t m;
                 mavlink_msg_manual_control_decode(&message, &m);
 
-                telemetry.control_input.update(
+                context.telemetry.control_input.update(
                     botix::IncomingTelemetry::ControlInput{
                         .r_axis = m.r,
                         .z_axis = m.z,
                         .y_axis = m.y,
                         .x_axis = m.x,
                     },
-                    _last_poll);
+                    context.timestamp);
 
-                return;
+                break;
             }
 
             default:
-                this->invoke(address, message);
-                return;
+                return false;
         }
+
+        return true;
     }
 
 private:
     static constexpr kf::Timer::Config heartbeat_timer_config{.value = 1000};
 
     kf::Timer _heartbeat_timer{heartbeat_timer_config};
-    kf::units::Milliseconds _last_poll{};
 
     [[nodiscard]] bool sendHeartbeat(transport::Link &transport_link) const noexcept {
         mavlink_message_t message;

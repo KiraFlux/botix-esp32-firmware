@@ -23,11 +23,9 @@ struct RawProtocol :
     kf::mixin::Callbacked<void(transport::Address const &address, kf::BytesView)>
 
 {
-
+    
     void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept override {
         // TODO: bulk send telemetry here
-
-        _last_poll = now;
 
         if (_heartbeat_timer.expired(now)) {
             _heartbeat_timer.start(now);
@@ -36,16 +34,16 @@ struct RawProtocol :
         }
     }
 
-    void receive(transport::Address const &address, kf::BytesView buffer, IncomingTelemetry &telemetry) noexcept override {
-        switch (buffer.length()) {
+    void receive(ReceiveContext const &context) noexcept override {
+        switch (context.transport.buffer.length()) {
             case sizeof(IncomingTelemetry::ControlInput):
-                telemetry.control_input.update(
-                    *reinterpret_cast<IncomingTelemetry::ControlInput const *>(buffer.data()),
-                    _last_poll);
+                context.telemetry.control_input.update(
+                    *reinterpret_cast<IncomingTelemetry::ControlInput const *>(context.transport.buffer.data()),
+                    context.timestamp);
                 return;
 
             default:
-                this->invoke(address, buffer);
+                this->invoke(context.transport.address, context.transport.buffer);
                 return;
         }
     }
@@ -54,7 +52,6 @@ private:
     static constexpr kf::Timer::Config heartbeat_timer_config{.value = 2000};
 
     kf::Timer _heartbeat_timer{heartbeat_timer_config};
-    kf::units::Milliseconds _last_poll{};
 };
 
 }// namespace botix::protocol

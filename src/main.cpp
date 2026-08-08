@@ -47,13 +47,17 @@ static botix::service::MixerService mixer_service{
     incoming_telemetry.control_input,
 };
 
-void onTransportReceive(botix::transport::Address const &address, kf::BytesView buffer) {
-    protocol_system.link().receive(address, buffer, incoming_telemetry);
+void onTransportReceive(botix::transport::Receiver::ReceiveContext const &context) {
+    protocol_system.link().receive({
+        .transport=context,
+        .telemetry=incoming_telemetry,
+        .timestamp = kf::rtos::Clock::now(),
+    });
 
-    test_log.debug("onTransportReceive: {}", buffer.length());
+    test_log.debug("onTransportReceive: {}", context.buffer.length());
 }
 
-void onTransportReceiveForeign(botix::transport::Address const &address, kf::BytesView buffer) {
+void onTransportReceiveForeign(botix::transport::Receiver::ReceiveContext const &context) {
     test_log.debug("Found device");
 
     if (transport_system.link().connected()) {
@@ -61,7 +65,7 @@ void onTransportReceiveForeign(botix::transport::Address const &address, kf::Byt
         return;
     }
 
-    if (not transport_system.link().connect(address)) {
+    if (not transport_system.link().connect(context.address)) {
         test_log.error("transport_system.link().connect failed");
     }
 }
