@@ -54,7 +54,14 @@ static botix::service::MixerService mixer_service{
     incoming_telemetry.control_input,
 };
 
-void onTransportReceive(botix::transport::Receiver::ReceiveContext const &context) {
+botix::OutgoingTelemetry::WheelDistance getWheelDistance() noexcept {
+    return {
+        .left_mm = periphery.wheel_odometry_encoder_left.positionUnits(),
+        .right_mm = periphery.wheel_odometry_encoder_right.positionUnits(),
+    };
+}
+
+void onTransportReceive(botix::transport::Receiver::ReceiveContext const &context) noexcept {
     protocol_system.link().receive({
         .transport = context,
         .incoming_telemetry = incoming_telemetry,
@@ -62,7 +69,7 @@ void onTransportReceive(botix::transport::Receiver::ReceiveContext const &contex
     });
 }
 
-void onTransportReceiveForeign(botix::transport::Receiver::ReceiveContext const &context) {
+void onTransportReceiveForeign(botix::transport::Receiver::ReceiveContext const &context) noexcept {
     test_log.debug("Found device");
 
     if (transport_system.link().connected()) {
@@ -75,19 +82,19 @@ void onTransportReceiveForeign(botix::transport::Receiver::ReceiveContext const 
     }
 }
 
-void onRawProtocolFallback(botix::transport::Address const &address, kf::BytesView buffer) {
+void onRawProtocolFallback(botix::transport::Address const &address, kf::BytesView buffer) noexcept {
     (void) address;
 
     test_log.debug("raw (fallback): got {} bytes", buffer.length());
 }
 
-void onMavlinkProtocolFallback(botix::transport::Address const &address, mavlink_message_t const &message) {
+void onMavlinkProtocolFallback(botix::transport::Address const &address, mavlink_message_t const &message) noexcept {
     (void) address;
 
     test_log.debug("mavlink (fallback): msg id: {}, seq: {}", message.msgid, message.seq);
 }
 
-void onInputChar(kf::Init &init, char c) {
+void onInputChar(kf::Init &init, char c) noexcept {
     switch (c) {
         case 'o': {
             init.logger.debug(
@@ -126,6 +133,8 @@ void kf::main(kf::Init &init) {
         return;
     }
 
+    outgoing_telemetry.wheel_distance.callback(getWheelDistance);
+
     transport_system.init(botix::transport::Kind::Espnow);
     transport_system.onReceive(onTransportReceive);
     transport_system.onReceiveForeign(onTransportReceiveForeign);
@@ -141,10 +150,12 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
+        outgoing_telemetry.poll(now);
+
         transport_system.poll(now);
         protocol_system.poll(now);
-        mixer_service.poll(now);
 
+        mixer_service.poll(now);
         {
             auto const &o = mixer_service.output();
 
