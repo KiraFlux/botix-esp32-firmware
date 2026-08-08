@@ -5,10 +5,10 @@
 
 #include <kf/mixin/NonCopyable.hpp>
 
+#include "botix/protocol/Kind.hpp"
 #include "botix/protocol/MavlinkProtocol.hpp"
 #include "botix/protocol/Protocol.hpp"
 #include "botix/protocol/RawProtocol.hpp"
-#include "botix/protocol/Kind.hpp"
 
 namespace botix::protocol {
 
@@ -16,8 +16,12 @@ struct Registry : kf::mixin::NonCopyable {
 
     Protocol &get(Kind kind) noexcept {
         switch (kind) {
-            case Kind::Raw: return raw();
-            case Kind::Mavlink: return mavlink();
+            case Kind::Mavlink:
+                return mavlink();
+
+            case Kind::Raw:
+            default:
+                return raw();
         }
     }
 
