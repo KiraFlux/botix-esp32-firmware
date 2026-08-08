@@ -8,8 +8,11 @@
 
 namespace botix::service {
 
+struct ServiceTag {};
+
 template<typename Impl> struct Service :
 
+    ServiceTag,
     kf::mixin::NonCopyable,
     kf::mixin::TimedPollable<Impl>
 

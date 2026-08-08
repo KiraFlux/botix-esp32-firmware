@@ -9,8 +9,11 @@
 
 namespace botix::system {
 
+struct SystemTag {};
+
 template<typename Impl, typename InitSignature> struct System :
 
+    SystemTag,
     kf::mixin::NonCopyable,
     kf::mixin::Initable<Impl, InitSignature>,
     kf::mixin::TimedPollable<Impl>
