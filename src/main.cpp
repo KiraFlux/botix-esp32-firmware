@@ -12,8 +12,6 @@
 #include <kf/Logger.hpp>
 #include <kf/units.hpp>
 
-#include "botix/IncomingTelemetry.hpp"
-#include "botix/OutgoingTelemetry.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
 
@@ -24,6 +22,7 @@
 #include "botix/service/MixerService.hpp"
 
 #include "botix/system/ProtocolSystem.hpp"
+#include "botix/system/TelemetrySystem.hpp"
 #include "botix/system/TransportSystem.hpp"
 
 static char test_log_buffer[256];
@@ -31,10 +30,8 @@ static kf::Logger test_log{"test", {test_log_buffer}};
 
 static botix::RootConfig root_config{};
 
-static botix::IncomingTelemetry incoming_telemetry{};
-
-static botix::OutgoingTelemetry outgoing_telemetry{
-    root_config.outgoing_telemetry,
+static botix::system::TelemetrySystem telemetry_system{
+    root_config,
 };
 
 static botix::system::TransportSystem transport_system{};
@@ -42,7 +39,7 @@ static botix::system::TransportSystem transport_system{};
 static botix::system::ProtocolSystem protocol_system{
     root_config,
     transport_system.link(),
-    outgoing_telemetry,
+    telemetry_system.outgoing(),
 };
 
 static botix::Periphery periphery{
@@ -51,7 +48,7 @@ static botix::Periphery periphery{
 
 static botix::service::MixerService mixer_service{
     root_config.mixer_service,
-    incoming_telemetry.control_input,
+    telemetry_system.incoming().control_input,
 };
 
 botix::OutgoingTelemetry::WheelDistance getWheelDistance() noexcept {
@@ -64,7 +61,7 @@ botix::OutgoingTelemetry::WheelDistance getWheelDistance() noexcept {
 void onTransportReceive(botix::transport::Receiver::ReceiveContext const &context) noexcept {
     protocol_system.link().receive({
         .transport = context,
-        .incoming_telemetry = incoming_telemetry,
+        .incoming_telemetry = telemetry_system.incoming(),
         .timestamp = kf::rtos::Clock::now(),
     });
 }
@@ -133,7 +130,8 @@ void kf::main(kf::Init &init) {
         return;
     }
 
-    outgoing_telemetry.wheel_distance.callback(getWheelDistance);
+    telemetry_system.init();
+    telemetry_system.outgoing().wheel_distance.callback(getWheelDistance);
 
     transport_system.init(botix::transport::Kind::Espnow);
     transport_system.onReceive(onTransportReceive);
@@ -150,8 +148,7 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
-        outgoing_telemetry.poll(now);
-
+        telemetry_system.poll(now);
         transport_system.poll(now);
         protocol_system.poll(now);
 
