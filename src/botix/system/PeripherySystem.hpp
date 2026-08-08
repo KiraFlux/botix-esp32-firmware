@@ -7,10 +7,8 @@
 
 #include <kf/units.hpp>
 
-#include "botix/IncomingTelemetry.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
-#include "botix/service/MixerService.hpp"
 
 #include "botix/system/System.hpp"
 
@@ -18,8 +16,8 @@ namespace botix::system {
 
 struct PeripherySystem : System<PeripherySystem, void()> {
 
-    constexpr explicit PeripherySystem(RootConfig const &config, IncomingTelemetry const &incoming_telemetry) noexcept :
-        _periphery{config.periphery}, _mixer_service{config.mixer_service, incoming_telemetry.control_input} {}
+    constexpr explicit PeripherySystem(RootConfig const &config) noexcept :
+        _periphery{config.periphery} {}
 
     [[nodiscard]] Periphery &periphery() noexcept {
         return _periphery;
@@ -27,7 +25,6 @@ struct PeripherySystem : System<PeripherySystem, void()> {
 
 private:
     Periphery _periphery;
-    service::MixerService _mixer_service;
 
     BOTIX_IMPL_SYSTEM(PeripherySystem, void());
 
@@ -43,14 +40,7 @@ private:
         }
     }
 
-    void pollImpl(kf::units::Milliseconds now) noexcept {
-        _mixer_service.poll(now);
-
-        auto const &output = _mixer_service.output();
-
-        _periphery.motor_driver_left.set(output.motor_left_set);
-        _periphery.motor_driver_right.set(output.motor_right_set);
-    }
+    void pollImpl(kf::units::Milliseconds now) noexcept {}
 };
 
 }// namespace botix::system

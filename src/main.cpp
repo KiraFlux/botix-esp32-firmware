@@ -10,6 +10,7 @@
 #include "botix/protocol/Kind.hpp"
 #include "botix/transport/Kind.hpp"
 
+#include "botix/system/BehaviorSystem.hpp"
 #include "botix/system/PeripherySystem.hpp"
 #include "botix/system/ProtocolSystem.hpp"
 #include "botix/system/TelemetrySystem.hpp"
@@ -24,12 +25,17 @@ void kf::main(kf::Init &init) {
 
     // system instances
 
+    static botix::system::PeripherySystem periphery_system{
+        root_config,
+    };
+
     static botix::system::TelemetrySystem telemetry_system{
         root_config,
     };
 
-    static botix::system::PeripherySystem periphery_system{
+    static botix::system::BehaviorSystem behavior_system{
         root_config,
+        periphery_system.periphery(),
         telemetry_system.incoming(),
     };
 
@@ -57,6 +63,10 @@ void kf::main(kf::Init &init) {
             .right_mm = periphery_system.periphery().wheel_odometry_encoder_right.positionUnits(),
         };
     });
+
+    // behavior
+
+    behavior_system.init();
 
     // transport
 
@@ -133,6 +143,7 @@ void kf::main(kf::Init &init) {
         telemetry_system.poll(now);
         transport_system.poll(now);
         protocol_system.poll(now);
+        behavior_system.poll(now);
         periphery_system.poll(now);
 
         {
