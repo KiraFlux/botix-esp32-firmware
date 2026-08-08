@@ -8,10 +8,10 @@
 #include <kf/Option.hpp>
 #include <kf/units.hpp>
 
+#include "botix/transport/Kind.hpp"
 #include "botix/transport/Link.hpp"
 #include "botix/transport/Receiver.hpp"
 #include "botix/transport/Registry.hpp"
-#include "botix/transport/Kind.hpp"
 #include "botix/transport/Transport.hpp"
 
 #include "botix/system/System.hpp"
@@ -44,10 +44,10 @@ private:
     BOTIX_IMPL_SYSTEM(TransportSystem, void(transport::Kind));
 
     void initImpl(transport::Kind init_transport_kind) noexcept {
-        (void) _registry.espnow().init();
+        (void) _registry.espnow.init();
 
-        _registry.espnow().receiver(kf::someRef(_receiver));
-        
+        _registry.espnow.receiver(kf::someRef(_receiver));
+
         _link.set(_registry.get(init_transport_kind));
     }
 

@@ -43,25 +43,16 @@ struct Registry :
     Protocol &get(Kind kind) noexcept {
         switch (kind) {
             case Kind::Mavlink:
-                return mavlink();
+                return mavlink;
 
             case Kind::Raw:
             default:
-                return raw();
+                return raw;
         }
     }
 
-    RawProtocol &raw() noexcept {
-        return _raw_protocol;
-    }
-
-    MavlinkProtocol &mavlink() noexcept {
-        return _mavlink_protocol;
-    }
-
-private:
-    RawProtocol _raw_protocol{};
-    MavlinkProtocol _mavlink_protocol{this->config().mavlink};
+    RawProtocol raw{};
+    MavlinkProtocol mavlink{this->config().mavlink};
 };
 
 }// namespace botix::protocol

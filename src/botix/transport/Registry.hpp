@@ -13,17 +13,14 @@ namespace botix::transport {
 
 struct Registry : kf::mixin::NonCopyable {
 
+    constexpr Registry() noexcept = default;
+
     Transport &get(Kind kind) noexcept {
         (void) kind;
-        return espnow();
+        return espnow;
     }
 
-    EspnowTransport &espnow() noexcept {
-        return _espnow_transport;
-    }
-
-private:
-    EspnowTransport _espnow_transport{};
+    EspnowTransport espnow{};
 };
 
 }// namespace botix::transport
