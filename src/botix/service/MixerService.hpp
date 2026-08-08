@@ -33,6 +33,7 @@ struct MixerServiceConfig : kf::mixin::Resettable<MixerServiceConfig> {
 private:
     KF_IMPL_RESETTABLE(MixerServiceConfig);
     constexpr void resetImpl() noexcept {
+        max_control_input_age_ms = 100;
         mode = Mode::Tank;
         motor_left_sign = +1;
         motor_right_sign = +1;
@@ -88,7 +89,14 @@ private:
     void pollImpl(kf::units::Milliseconds now) noexcept {
         auto const age = _control_input.age(now);
 
+        if (age > this->config().max_control_input_age_ms) {
+            _output.reset();
+            _last_age = age;
+            return;
+        }
+
         if (age != _last_age) {
+            _last_age = age;
             auto const &input = _control_input.value();
 
             switch (this->config().mode) {
@@ -110,11 +118,7 @@ private:
 
             _output.motor_left_set *= this->config().motor_left_sign;
             _output.motor_right_set *= this->config().motor_right_sign;
-        } else if (age > this->config().max_control_input_age_ms) {
-            _output.reset();
         }
-
-        _last_age = age;
     }
 };
 
