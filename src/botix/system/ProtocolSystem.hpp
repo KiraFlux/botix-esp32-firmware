@@ -5,8 +5,6 @@
 
 #include <utility>
 
-#include <MAVLink.h>
-
 #include <kf/units.hpp>
 
 #include "botix/OutgoingTelemetry.hpp"
@@ -23,21 +21,21 @@ namespace botix::system {
 
 struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
 
-    explicit constexpr ProtocolSystem(
-        RootConfig const &config,
-        transport::Link &transport_link,
-        OutgoingTelemetry &outgoing_telemetry) noexcept :
-        _transport_link{transport_link},
-        _outgoing_telemetry{outgoing_telemetry},
-        _registry{config.protocol_registry}
+    struct Dependencies {
+        RootConfig const &config;
+        transport::Link &transport_link;
+        OutgoingTelemetry &outgoing_telemetry;
+    };
 
-    {}
+    explicit constexpr ProtocolSystem(Dependencies deps) noexcept :
+        _registry{deps.config.protocol_registry},
+        _protocol_poll_context{
+            .transport_link = deps.transport_link,
+            .outgoing_telemetry = deps.outgoing_telemetry,
+            .timestamp = 0,
+        } {}
 
-    [[nodiscard]] protocol::Link &link() noexcept {
-        return _protocol_link;
-    }
-
-    [[nodiscard]] protocol::Protocol &get(protocol::Kind kind) noexcept {
+    [[nodiscard]] auto &get(protocol::Kind kind) noexcept {
         return _registry.get(kind);
     }
 
@@ -49,25 +47,21 @@ struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
         _registry.mavlink.callback(std::forward<decltype(f)>(f));
     }
 
-private:
-    transport::Link &_transport_link;
-    OutgoingTelemetry &_outgoing_telemetry;
+    protocol::Link link{};
 
-    protocol::Link _protocol_link{};
+private:
     protocol::Registry _registry;
+    protocol::Protocol::PollContext _protocol_poll_context;
 
     BOTIX_IMPL_SYSTEM(ProtocolSystem, void(protocol::Kind));
 
     void initImpl(protocol::Kind init_protocol_kind) noexcept {
-        _protocol_link.set(_registry.get(init_protocol_kind));
+        link.set(_registry.get(init_protocol_kind));
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        _protocol_link.poll({
-            .transport_link = _transport_link,
-            .outgoing_telemetry = _outgoing_telemetry,
-            .timestamp = now,
-        });
+        _protocol_poll_context.timestamp = now;
+        link.poll(_protocol_poll_context);
     }
 };
 

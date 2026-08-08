@@ -7,11 +7,13 @@
 
 #include "botix/RootConfig.hpp"
 
+#include "botix/OutgoingTelemetry.hpp"
 #include "botix/protocol/Kind.hpp"
+#include "botix/transport/Address.hpp"
 #include "botix/transport/Kind.hpp"
 
 #include "botix/system/BehaviorSystem.hpp"
-#include "botix/system/PeripherySystem.hpp"
+#include "botix/system/HardwareSystem.hpp"
 #include "botix/system/ProtocolSystem.hpp"
 #include "botix/system/TelemetrySystem.hpp"
 #include "botix/system/TransportSystem.hpp"
@@ -25,87 +27,89 @@ void kf::main(kf::Init &init) {
 
     // system instances
 
-    static botix::system::PeripherySystem periphery_system{
-        root_config,
-    };
+    static botix::system::HardwareSystem system_hardware{{
+        .config = root_config,
+    }};
 
-    static botix::system::TelemetrySystem telemetry_system{
-        root_config,
-    };
+    static botix::system::TelemetrySystem system_telemetry{{
+        .config = root_config,
+    }};
 
-    static botix::system::BehaviorSystem behavior_system{
-        root_config,
-        periphery_system.periphery(),
-        telemetry_system.incoming(),
-    };
+    static botix::system::TransportSystem system_transport{{
+        // TODO: check for deps
+    }};
 
-    static botix::system::TransportSystem transport_system{};
+    static botix::system::ProtocolSystem system_protocol{{
+        .config = root_config,
+        .transport_link = system_transport.link,
+        .outgoing_telemetry = system_telemetry.outgoing,
+    }};
 
-    static botix::system::ProtocolSystem protocol_system{
-        root_config,
-        transport_system.link(),
-        telemetry_system.outgoing(),
-    };
+    static botix::system::BehaviorSystem system_behavior{{
+        .config = root_config,
+        .periphery = system_hardware.periphery,
+        .incoming_telemetry = system_telemetry.incoming,
+    }};
 
     // system initialization
 
-    // periphery
+    // hardware
 
-    periphery_system.init();
+    system_hardware.init();
 
     // telemetry
 
-    telemetry_system.init();
+    system_telemetry.init();
 
-    telemetry_system.outgoing().wheel_distance.callback([]() -> botix::OutgoingTelemetry::WheelDistance {
+    system_telemetry.outgoing.wheel_distance.callback([]() -> botix::OutgoingTelemetry::WheelDistance {
         return {
-            .left_mm = periphery_system.periphery().wheel_odometry_encoder_left.positionUnits(),
-            .right_mm = periphery_system.periphery().wheel_odometry_encoder_right.positionUnits(),
+            .left_mm = system_hardware.periphery.wheel_odometry_encoder_left.positionUnits(),
+            .right_mm = system_hardware.periphery.wheel_odometry_encoder_right.positionUnits(),
         };
     });
 
-    // behavior
-
-    behavior_system.init();
-
     // transport
 
-    transport_system.init(botix::transport::Kind::Espnow);
+    system_transport.init(botix::transport::Kind::Espnow);
 
-    transport_system.onReceive([](auto const &context) -> void {
-        protocol_system.link().receive({
+    system_transport.onReceive([](auto const &context) -> void {
+        system_protocol.link.receive({
             .transport = context,
-            .incoming_telemetry = telemetry_system.incoming(),
+            .incoming_telemetry = system_telemetry.incoming,
             .timestamp = kf::rtos::Clock::now(),
         });
     });
 
-    transport_system.onReceiveForeign([&init](auto const &context) -> void {
+    system_transport.onReceiveForeign([&init](auto const &context) -> void {
         init.logger.debug("Found device");
 
-        if (transport_system.link().connected()) {
+        if (system_transport.link.connected()) {
             init.logger.error("connect denied (already connected)");
             return;
         }
 
-        if (not transport_system.link().connect(context.address)) {
-            init.logger.error("transport_system.link().connect failed");
+        if (not system_transport.link.connect(context.address)) {
+            init.logger.error("system_transport.link.connect failed");
         }
     });
 
     // protocol
 
-    protocol_system.init(botix::protocol::Kind::Mavlink);
+    system_protocol.init(botix::protocol::Kind::Mavlink);
 
-    protocol_system.onRawFallback([&init](auto const &address, auto buffer) -> void {
+    system_protocol.onRawFallback([&init](botix::transport::Address const &address, auto buffer) -> void {
         (void) address;
         init.logger.debug("raw (fallback): got {} bytes", buffer.length());
     });
 
-    protocol_system.onMavlinkFallback([&init](auto const &address, auto const &message) -> void {
+    system_protocol.onMavlinkFallback([&init](botix::transport::Address const &address, auto const &message) -> void {
         (void) address;
         init.logger.debug("mavlink (fallback): msg id: {}, seq: {}", message.msgid, message.seq);
     });
+
+    // behavior
+
+    system_behavior.init();
 
     init.logger.info("Ready");
 
@@ -116,19 +120,19 @@ void kf::main(kf::Init &init) {
             case 'o': {
                 init.logger.debug(
                     "Encoders: \tL: {} \t R: {}",
-                    periphery_system.periphery().wheel_odometry_encoder_left.positionTicks(),
-                    periphery_system.periphery().wheel_odometry_encoder_right.positionTicks());
+                    system_telemetry.outgoing.wheel_distance.value().left_mm,
+                    system_telemetry.outgoing.wheel_distance.value().right_mm);
                 return;
             }
 
             case 'r': {
-                protocol_system.link().set(protocol_system.get(botix::protocol::Kind::Raw));
+                system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Raw));
                 init.logger.debug("protocol: Raw");
                 return;
             }
 
             case 'm': {
-                protocol_system.link().set(protocol_system.get(botix::protocol::Kind::Mavlink));
+                system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Mavlink));
                 init.logger.debug("protocol: Mavlink");
                 return;
             }
@@ -140,11 +144,11 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
-        telemetry_system.poll(now);
-        transport_system.poll(now);
-        protocol_system.poll(now);
-        behavior_system.poll(now);
-        periphery_system.poll(now);
+        system_telemetry.poll(now);
+        system_transport.poll(now);
+        system_protocol.poll(now);
+        system_behavior.poll(now);
+        system_hardware.poll(now);
 
         {
             while (init.io.availableForRead() > 0) {

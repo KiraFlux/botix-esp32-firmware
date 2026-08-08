@@ -25,29 +25,34 @@ namespace botix::system {
 
 struct BehaviorSystem : System<BehaviorSystem, void()> {
 
-    explicit constexpr BehaviorSystem(RootConfig const &config, Periphery &periphery, IncomingTelemetry &incoming_telemetry) noexcept :
-        _mixer_service{config.mixer_service, incoming_telemetry.control_input},
-        _registry{periphery, _mixer_service} {}
+    struct Dependencies {
+        RootConfig const &config;
+        Periphery &periphery;
+        IncomingTelemetry &incoming_telemetry;
+    };
 
-    [[nodiscard]] behavior::Link &link() noexcept {
-        return _link;
-    }
+    explicit constexpr BehaviorSystem(Dependencies deps) noexcept :
+        _mixer_service{deps.config.mixer_service, deps.incoming_telemetry.control_input},
+        _registry{deps.periphery, _mixer_service} {}
 
-    [[nodiscard]] behavior::Behavior &get(behavior::Kind kind) noexcept {
+    [[nodiscard]] auto &get(behavior::Kind kind) noexcept {
         return _registry.get(kind);
     }
 
 private:
     service::MixerService _mixer_service;
     behavior::Registry _registry;
-    behavior::Link _link{_registry.operational};
 
+public:
+    behavior::Link link{_registry.operational};
+
+private:
     BOTIX_IMPL_SYSTEM(BehaviorSystem, void());
 
     void initImpl() noexcept {}
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        _link.onPoll(now);
+        link.onPoll(now);
     }
 };
 

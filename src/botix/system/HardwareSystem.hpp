@@ -14,22 +14,22 @@
 
 namespace botix::system {
 
-struct PeripherySystem : System<PeripherySystem, void()> {
+struct HardwareSystem : System<HardwareSystem, void()> {
 
-    constexpr explicit PeripherySystem(RootConfig const &config) noexcept :
-        _periphery{config.periphery} {}
+    struct Dependencies {
+        RootConfig const &config;
+    };
 
-    [[nodiscard]] Periphery &periphery() noexcept {
-        return _periphery;
-    }
+    constexpr explicit HardwareSystem(Dependencies deps) noexcept :
+        periphery{deps.config.periphery} {}
 
+    Periphery periphery;
 private:
-    Periphery _periphery;
 
-    BOTIX_IMPL_SYSTEM(PeripherySystem, void());
+    BOTIX_IMPL_SYSTEM(HardwareSystem, void());
 
     void initImpl() noexcept {
-        if (not _periphery.init()) {
+        if (not periphery.init()) {
             // init.logger.error("Periphery init failed");
             return;
         }

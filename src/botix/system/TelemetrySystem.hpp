@@ -15,27 +15,23 @@ namespace botix::system {
 
 struct TelemetrySystem : System<TelemetrySystem, void()> {
 
-    constexpr explicit TelemetrySystem(RootConfig const &config) noexcept :
-        _outgoing{config.outgoing_telemetry} {}
+    struct Dependencies {
+        RootConfig const &config;
+    };
 
-    [[nodiscard]] IncomingTelemetry &incoming() noexcept {
-        return _incoming;
-    }
+    constexpr explicit TelemetrySystem(Dependencies deps) noexcept :
+        outgoing{deps.config.outgoing_telemetry} {}
 
-    [[nodiscard]] OutgoingTelemetry &outgoing() noexcept {
-        return _outgoing;
-    }
+    IncomingTelemetry incoming{};
+    OutgoingTelemetry outgoing;
 
 private:
-    IncomingTelemetry _incoming;
-    OutgoingTelemetry _outgoing;
-
     BOTIX_IMPL_SYSTEM(TelemetrySystem, void());
 
     void initImpl() noexcept {}
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        _outgoing.poll(now);
+        outgoing.poll(now);
     }
 };
 

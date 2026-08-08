@@ -12,7 +12,6 @@
 #include "botix/transport/Link.hpp"
 #include "botix/transport/Receiver.hpp"
 #include "botix/transport/Registry.hpp"
-#include "botix/transport/Transport.hpp"
 
 #include "botix/system/System.hpp"
 
@@ -20,11 +19,13 @@ namespace botix::system {
 
 struct TransportSystem : System<TransportSystem, void(transport::Kind)> {
 
-    [[nodiscard]] transport::Link &link() noexcept {
-        return _link;
+    struct Dependencies {};
+
+    explicit constexpr TransportSystem(Dependencies deps) noexcept {
+        (void) deps;
     }
 
-    [[nodiscard]] transport::Transport &get(transport::Kind kind) noexcept {
+    [[nodiscard]] auto &get(transport::Kind kind) noexcept {
         return _registry.get(kind);
     }
 
@@ -36,8 +37,8 @@ struct TransportSystem : System<TransportSystem, void(transport::Kind)> {
         _receiver.onReceiveForeign(std::forward<decltype(f)>(f));
     }
 
+    transport::Link link{};
 private:
-    transport::Link _link{};
     transport::Receiver _receiver{};
     transport::Registry _registry{};
 
@@ -48,11 +49,11 @@ private:
 
         _registry.espnow.receiver(kf::someRef(_receiver));
 
-        _link.set(_registry.get(init_transport_kind));
+        link.set(_registry.get(init_transport_kind));
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        _link.poll(now);
+        link.poll(now);
     }
 };
 
