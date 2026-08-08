@@ -60,8 +60,6 @@ void onTransportReceive(botix::transport::Receiver::ReceiveContext const &contex
         .incoming_telemetry = incoming_telemetry,
         .timestamp = kf::rtos::Clock::now(),
     });
-
-    test_log.debug("onTransportReceive: {}", context.buffer.length());
 }
 
 void onTransportReceiveForeign(botix::transport::Receiver::ReceiveContext const &context) {
