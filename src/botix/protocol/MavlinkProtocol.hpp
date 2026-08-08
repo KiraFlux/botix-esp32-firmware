@@ -66,7 +66,7 @@ struct MavlinkProtocol :
                 mavlink_manual_control_t m;
                 mavlink_msg_manual_control_decode(&message, &m);
 
-                context.telemetry.control_input.update(
+                context.incoming_telemetry.control_input.update(
                     botix::IncomingTelemetry::ControlInput{
                         .r_axis = m.r,
                         .z_axis = m.z,

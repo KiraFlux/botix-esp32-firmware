@@ -49,8 +49,8 @@ static botix::service::MixerService mixer_service{
 
 void onTransportReceive(botix::transport::Receiver::ReceiveContext const &context) {
     protocol_system.link().receive({
-        .transport=context,
-        .telemetry=incoming_telemetry,
+        .transport = context,
+        .incoming_telemetry = incoming_telemetry,
         .timestamp = kf::rtos::Clock::now(),
     });
 

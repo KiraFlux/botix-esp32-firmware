@@ -19,7 +19,7 @@ struct Protocol : kf::mixin::NonCopyable {
 
     struct ReceiveContext {
         transport::Receiver::ReceiveContext transport;
-        IncomingTelemetry &telemetry;
+        IncomingTelemetry &incoming_telemetry;
         kf::units::Milliseconds timestamp;
     };
 

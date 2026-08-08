@@ -23,7 +23,7 @@ struct RawProtocol :
     kf::mixin::Callbacked<void(transport::Address const &address, kf::BytesView)>
 
 {
-    
+
     void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept override {
         // TODO: bulk send telemetry here
 
@@ -37,7 +37,7 @@ struct RawProtocol :
     void receive(ReceiveContext const &context) noexcept override {
         switch (context.transport.buffer.length()) {
             case sizeof(IncomingTelemetry::ControlInput):
-                context.telemetry.control_input.update(
+                context.incoming_telemetry.control_input.update(
                     *reinterpret_cast<IncomingTelemetry::ControlInput const *>(context.transport.buffer.data()),
                     context.timestamp);
                 return;
