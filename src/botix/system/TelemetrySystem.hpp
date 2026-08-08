@@ -7,7 +7,7 @@
 
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/OutgoingTelemetry.hpp"
-#include "botix/RootConfig.hpp"
+#include "botix/config/DeviceConfig.hpp"
 
 #include "botix/system/System.hpp"
 
@@ -16,7 +16,7 @@ namespace botix::system {
 struct TelemetrySystem : System<TelemetrySystem, void()> {
 
     struct Dependencies {
-        RootConfig const &config;
+        config::DeviceConfig const &config;
     };
 
     constexpr explicit TelemetrySystem(Dependencies deps) noexcept :

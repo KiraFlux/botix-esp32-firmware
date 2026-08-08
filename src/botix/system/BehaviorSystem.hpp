@@ -11,7 +11,7 @@
 
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/Periphery.hpp"
-#include "botix/RootConfig.hpp"
+#include "botix/config/DeviceConfig.hpp"
 #include "botix/behavior/Behavior.hpp"
 #include "botix/behavior/Kind.hpp"
 #include "botix/behavior/Link.hpp"
@@ -26,7 +26,7 @@ namespace botix::system {
 struct BehaviorSystem : System<BehaviorSystem, void()> {
 
     struct Dependencies {
-        RootConfig const &config;
+        config::DeviceConfig const &config;
         Periphery &periphery;
         IncomingTelemetry &incoming_telemetry;
     };

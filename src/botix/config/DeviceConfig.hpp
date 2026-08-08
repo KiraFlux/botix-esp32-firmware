@@ -3,16 +3,16 @@
 
 #pragma once
 
-#include <kf/mixin/Resettable.hpp>
-
 #include "botix/OutgoingTelemetry.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/protocol/Registry.hpp"
 #include "botix/service/MixerService.hpp"
 
-namespace botix {
+#include "botix/config/Config.hpp"
 
-struct RootConfig : kf::mixin::Resettable<RootConfig> {
+namespace botix::config {
+
+struct DeviceConfig : Config<DeviceConfig, 0> {
 
     Periphery::Config periphery;
 
@@ -23,7 +23,7 @@ struct RootConfig : kf::mixin::Resettable<RootConfig> {
     service::MixerService::Config mixer_service;
 
 private:
-    KF_IMPL_RESETTABLE(RootConfig);
+    KF_IMPL_RESETTABLE(DeviceConfig);
     constexpr void resetImpl() noexcept {
         periphery.reset();
         outgoing_telemetry.reset();

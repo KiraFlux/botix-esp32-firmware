@@ -5,7 +5,7 @@
 #include <kf/rtos/Clock.hpp>
 #include <kf/rtos/Task.hpp>
 
-#include "botix/RootConfig.hpp"
+#include "botix/config/DeviceConfig.hpp"
 
 #include "botix/OutgoingTelemetry.hpp"
 #include "botix/protocol/Kind.hpp"
@@ -18,12 +18,10 @@
 #include "botix/system/TelemetrySystem.hpp"
 #include "botix/system/TransportSystem.hpp"
 
-static botix::RootConfig root_config{};
+static auto root_config{botix::config::DeviceConfig::defaults()};
 
 void kf::main(kf::Init &init) {
     init.logger.debug("Starting");
-
-    root_config.reset();// set to defaults
 
     // system instances
 

@@ -8,7 +8,7 @@
 #include <kf/units.hpp>
 
 #include "botix/OutgoingTelemetry.hpp"
-#include "botix/RootConfig.hpp"
+#include "botix/config/DeviceConfig.hpp"
 #include "botix/protocol/Kind.hpp"
 #include "botix/protocol/Link.hpp"
 #include "botix/protocol/Protocol.hpp"
@@ -22,7 +22,7 @@ namespace botix::system {
 struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
 
     struct Dependencies {
-        RootConfig const &config;
+        config::DeviceConfig const &config;
         transport::Link &transport_link;
         OutgoingTelemetry &outgoing_telemetry;
     };

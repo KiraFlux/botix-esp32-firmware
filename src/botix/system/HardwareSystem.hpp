@@ -8,7 +8,7 @@
 #include <kf/units.hpp>
 
 #include "botix/Periphery.hpp"
-#include "botix/RootConfig.hpp"
+#include "botix/config/DeviceConfig.hpp"
 
 #include "botix/system/System.hpp"
 
@@ -17,15 +17,15 @@ namespace botix::system {
 struct HardwareSystem : System<HardwareSystem, void()> {
 
     struct Dependencies {
-        RootConfig const &config;
+        config::DeviceConfig const &config;
     };
 
     constexpr explicit HardwareSystem(Dependencies deps) noexcept :
         periphery{deps.config.periphery} {}
 
     Periphery periphery;
-private:
 
+private:
     BOTIX_IMPL_SYSTEM(HardwareSystem, void());
 
     void initImpl() noexcept {
