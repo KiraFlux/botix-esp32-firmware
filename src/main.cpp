@@ -16,28 +16,23 @@
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
 
+#include "botix/protocol/Kind.hpp"
 #include "botix/transport/Address.hpp"
-#include "botix/transport/Link.hpp"
-#include "botix/transport/Receiver.hpp"
-#include "botix/transport/Registry.hpp"
+#include "botix/transport/Kind.hpp"
 
-#include "botix/protocol/Link.hpp"
-#include "botix/protocol/Registry.hpp"
+#include "botix/system/TransportSystem.hpp"
+#include "botix/system/ProtocolSystem.hpp"
 
 static char test_log_buffer[256];
 static kf::Logger test_log{"test", {test_log_buffer}};
 
 static botix::RootConfig root_config{};
 
-static botix::transport::Registry transport_registry{};
+static botix::system::TransportSystem transport_system{};
 
-static botix::transport::Receiver transport_receiver{};
-
-static botix::transport::Link transport_link{};
-
-static botix::protocol::Registry protocol_registry{};
-
-static botix::protocol::Link protocol_link{};
+static botix::system::ProtocolSystem protocol_system{
+    transport_system.link(),
+};
 
 static botix::Periphery periphery{
     root_config.periphery,
@@ -48,7 +43,7 @@ static botix::Control control{
 };
 
 void onTransportReceive(botix::transport::Address const &address, kf::BytesView buffer) {
-    protocol_link.receive(address, buffer);
+    protocol_system.link().receive(address, buffer);
 
     test_log.debug("onTransportReceive: {}", buffer.length());
 }
@@ -56,13 +51,13 @@ void onTransportReceive(botix::transport::Address const &address, kf::BytesView 
 void onTransportReceiveForeign(botix::transport::Address const &address, kf::BytesView buffer) {
     test_log.debug("Found device");
 
-    if (transport_link.connected()) {
+    if (transport_system.link().connected()) {
         test_log.error("connect denied (already connected)");
         return;
     }
 
-    if (not transport_link.connect(address)) {
-        test_log.error("transport_link.connect failed");
+    if (not transport_system.link().connect(address)) {
+        test_log.error("transport_system.link().connect failed");
     }
 }
 
@@ -110,13 +105,13 @@ void onInputChar(kf::Init &init, char c) {
         }
 
         case 'r': {
-            protocol_link.set(protocol_registry.raw());
+            protocol_system.link().set(protocol_system.get(botix::protocol::Kind::Raw));
             init.logger.debug("protocol: Raw");
             return;
         }
 
         case 'm': {
-            protocol_link.set(protocol_registry.mavlink());
+            protocol_system.link().set(protocol_system.get(botix::protocol::Kind::Mavlink));
             init.logger.debug("protocol: Mavlink");
             return;
         }
@@ -138,21 +133,13 @@ void kf::main(kf::Init &init) {
         return;
     }
 
-    if (not transport_registry.espnow().init()) {
-        init.logger.error("EspnowTransport init failed");
-        return;
-    }
+    transport_system.init(botix::transport::Kind::Espnow);
+    transport_system.onReceive(onTransportReceive);
+    transport_system.onReceiveForeign(onTransportReceiveForeign);
 
-    transport_receiver.onReceive(onTransportReceive);
-    transport_receiver.onReceiveForeign(onTransportReceiveForeign);
-
-    transport_registry.espnow().receiver(kf::someRef(transport_receiver));
-
-    transport_link.set(transport_registry.espnow());
-
-    protocol_registry.raw().callback(onRawProtocolReceive);
-    protocol_registry.mavlink().callback(onMavlinkProtocolReceive);
-    protocol_link.set(protocol_registry.mavlink());
+    protocol_system.init(botix::protocol::Kind::Mavlink);
+    protocol_system.onRawReceive(onRawProtocolReceive);
+    protocol_system.onMavlinkReceive(onMavlinkProtocolReceive);
 
     init.logger.info("Ready");
 
@@ -161,8 +148,8 @@ void kf::main(kf::Init &init) {
 
         auto const now = rtos::Clock::now();
 
-        transport_link.poll(now);
-        protocol_link.poll(now, transport_link);
+        transport_system.poll(now);
+        protocol_system.poll(now);
         control.poll(now);
 
         {
