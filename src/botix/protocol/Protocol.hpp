@@ -8,6 +8,7 @@
 
 #include <kf/mixin/NonCopyable.hpp>
 
+#include "botix/IncomingTelemetry.hpp"
 #include "botix/transport/Address.hpp"
 #include "botix/transport/Link.hpp"
 
@@ -18,7 +19,7 @@ struct Protocol : kf::mixin::NonCopyable {
     // TODO: add telemetry here
     virtual void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept = 0;
 
-    virtual void receive(transport::Address const &address, kf::BytesView buffer) noexcept = 0;
+    virtual void receive(transport::Address const &address, kf::BytesView buffer, IncomingTelemetry &telemetry) noexcept = 0;
 };
 
 }// namespace botix::protocol

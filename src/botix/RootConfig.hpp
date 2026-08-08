@@ -5,7 +5,7 @@
 
 #include <kf/mixin/Resettable.hpp>
 
-#include "botix/Control.hpp"
+#include "botix/service/MixerService.hpp"
 #include "botix/Periphery.hpp"
 
 namespace botix {
@@ -13,13 +13,13 @@ namespace botix {
 struct RootConfig : kf::mixin::Resettable<RootConfig> {
 
     Periphery::Config periphery;
-    Control::Config control;
+    service::MixerService::Config mixer_service;
 
 private:
     KF_IMPL_RESETTABLE(RootConfig);
     constexpr void resetImpl() noexcept {
         periphery.reset();
-        control.reset();
+        mixer_service.reset();
     }
 };
 

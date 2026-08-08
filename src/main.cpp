@@ -12,7 +12,7 @@
 #include <kf/Logger.hpp>
 #include <kf/units.hpp>
 
-#include "botix/Control.hpp"
+#include "botix/IncomingTelemetry.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
 
@@ -20,13 +20,17 @@
 #include "botix/transport/Address.hpp"
 #include "botix/transport/Kind.hpp"
 
-#include "botix/system/TransportSystem.hpp"
+#include "botix/service/MixerService.hpp"
+
 #include "botix/system/ProtocolSystem.hpp"
+#include "botix/system/TransportSystem.hpp"
 
 static char test_log_buffer[256];
 static kf::Logger test_log{"test", {test_log_buffer}};
 
 static botix::RootConfig root_config{};
+
+static botix::IncomingTelemetry incoming_telemetry{};
 
 static botix::system::TransportSystem transport_system{};
 
@@ -38,12 +42,13 @@ static botix::Periphery periphery{
     root_config.periphery,
 };
 
-static botix::Control control{
-    root_config.control,
+static botix::service::MixerService mixer_service{
+    root_config.mixer_service,
+    incoming_telemetry.control_input,
 };
 
 void onTransportReceive(botix::transport::Address const &address, kf::BytesView buffer) {
-    protocol_system.link().receive(address, buffer);
+    protocol_system.link().receive(address, buffer, incoming_telemetry);
 
     test_log.debug("onTransportReceive: {}", buffer.length());
 }
@@ -61,37 +66,16 @@ void onTransportReceiveForeign(botix::transport::Address const &address, kf::Byt
     }
 }
 
-void onRawProtocolReceive(botix::transport::Address const &address, kf::BytesView buffer) {
+void onRawProtocolFallback(botix::transport::Address const &address, kf::BytesView buffer) {
     (void) address;
 
-    switch (buffer.length()) {
-        case sizeof(botix::Control::Input):
-            control.input(*reinterpret_cast<botix::Control::Input const *>(buffer.data()));
-            return;
-
-        default:
-            return;
-    }
+    test_log.debug("raw (fallback): got {} bytes", buffer.length());
 }
 
-void onMavlinkProtocolReceive(botix::transport::Address const &address, mavlink_message_t const &message) {
+void onMavlinkProtocolFallback(botix::transport::Address const &address, mavlink_message_t const &message) {
     (void) address;
 
-    switch (message.msgid) {
-        case MAVLINK_MSG_ID_MANUAL_CONTROL: {
-            mavlink_manual_control_t m;
-            mavlink_msg_manual_control_decode(&message, &m);
-
-            control.input(botix::Control::Input{
-                .left_x = m.r,
-                .left_y = m.z,
-                .right_x = m.y,
-                .right_y = m.x,
-            });
-
-            return;
-        }
-    }
+    test_log.debug("mavlink (fallback): msg id: {}, seq: {}", message.msgid, message.seq);
 }
 
 void onInputChar(kf::Init &init, char c) {
@@ -138,8 +122,8 @@ void kf::main(kf::Init &init) {
     transport_system.onReceiveForeign(onTransportReceiveForeign);
 
     protocol_system.init(botix::protocol::Kind::Mavlink);
-    protocol_system.onRawReceive(onRawProtocolReceive);
-    protocol_system.onMavlinkReceive(onMavlinkProtocolReceive);
+    protocol_system.onRawFallback(onRawProtocolFallback);
+    protocol_system.onMavlinkFallback(onMavlinkProtocolFallback);
 
     init.logger.info("Ready");
 
@@ -150,10 +134,10 @@ void kf::main(kf::Init &init) {
 
         transport_system.poll(now);
         protocol_system.poll(now);
-        control.poll(now);
+        mixer_service.poll(now);
 
         {
-            auto const &o = control.output();
+            auto const &o = mixer_service.output();
 
             periphery.motor_driver_left.set(o.motor_left_set);
             periphery.motor_driver_right.set(o.motor_right_set);

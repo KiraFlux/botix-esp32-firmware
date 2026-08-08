@@ -32,11 +32,11 @@ struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
         return _registry.get(kind);
     }
 
-    void onRawReceive(auto &&f) noexcept {
+    void onRawFallback(auto &&f) noexcept {
         _registry.raw().callback(std::forward<decltype(f)>(f));
     }
 
-    void onMavlinkReceive(auto &&f) noexcept {
+    void onMavlinkFallback(auto &&f) noexcept {
         _registry.mavlink().callback(std::forward<decltype(f)>(f));
     }
 
