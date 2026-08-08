@@ -73,7 +73,7 @@ struct Periphery :
         }
     };
 
-    explicit Periphery(Config const &config) noexcept :
+    explicit constexpr Periphery(Config const &config) noexcept :
         config{config} {}
 
     Config const &config;
