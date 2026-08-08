@@ -9,6 +9,8 @@
 
 #include <kf/units.hpp>
 
+#include "botix/OutgoingTelemetry.hpp"
+#include "botix/RootConfig.hpp"
 #include "botix/protocol/Kind.hpp"
 #include "botix/protocol/Link.hpp"
 #include "botix/protocol/Protocol.hpp"
@@ -21,8 +23,15 @@ namespace botix::system {
 
 struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
 
-    explicit constexpr ProtocolSystem(transport::Link &transport_link) noexcept :
-        _transport_link{transport_link} {}
+    explicit constexpr ProtocolSystem(
+        RootConfig const &config,
+        transport::Link &transport_link,
+        OutgoingTelemetry &outgoing_telemetry) noexcept :
+        _transport_link{transport_link},
+        _outgoing_telemetry{outgoing_telemetry},
+        _registry{config.protocol_registry}
+
+    {}
 
     [[nodiscard]] protocol::Link &link() noexcept {
         return _protocol_link;
@@ -42,9 +51,10 @@ struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
 
 private:
     transport::Link &_transport_link;
+    OutgoingTelemetry &_outgoing_telemetry;
 
     protocol::Link _protocol_link{};
-    protocol::Registry _registry{};
+    protocol::Registry _registry;
 
     BOTIX_IMPL_SYSTEM(ProtocolSystem, void(protocol::Kind));
 
@@ -53,7 +63,11 @@ private:
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        _protocol_link.poll(now, _transport_link);
+        _protocol_link.poll({
+            .transport_link = _transport_link,
+            .outgoing_telemetry = _outgoing_telemetry,
+            .timestamp = now,
+        });
     }
 };
 

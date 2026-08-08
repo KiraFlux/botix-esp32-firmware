@@ -23,10 +23,9 @@ struct Link : kf::mixin::NonCopyable {
         _protocol = kf::someRef(new_protocol);
     }
 
-    // TODO: add telemetry here
-    void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept {
+    void poll(Protocol::PollContext const & context) noexcept {
         if (_protocol.isSome()) {
-            _protocol.unwrap().poll(now, transport_link);
+            _protocol.unwrap().poll(context);
         }
     }
 

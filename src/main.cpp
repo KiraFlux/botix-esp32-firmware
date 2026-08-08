@@ -13,6 +13,7 @@
 #include <kf/units.hpp>
 
 #include "botix/IncomingTelemetry.hpp"
+#include "botix/OutgoingTelemetry.hpp"
 #include "botix/Periphery.hpp"
 #include "botix/RootConfig.hpp"
 
@@ -32,10 +33,16 @@ static botix::RootConfig root_config{};
 
 static botix::IncomingTelemetry incoming_telemetry{};
 
+static botix::OutgoingTelemetry outgoing_telemetry{
+    root_config.outgoing_telemetry,
+};
+
 static botix::system::TransportSystem transport_system{};
 
 static botix::system::ProtocolSystem protocol_system{
+    root_config,
     transport_system.link(),
+    outgoing_telemetry,
 };
 
 static botix::Periphery periphery{

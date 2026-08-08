@@ -24,13 +24,15 @@ struct RawProtocol :
 
 {
 
-    void poll(kf::units::Milliseconds now, transport::Link &transport_link) noexcept override {
-        // TODO: bulk send telemetry here
+    void poll(PollContext const &context) noexcept override {
+        if (context.outgoing_telemetry.wheel_distance.ready(context.timestamp)) {
+            (void) context.transport_link.writePacket(context.outgoing_telemetry.wheel_distance.value());
+        }
 
-        if (_heartbeat_timer.expired(now)) {
-            _heartbeat_timer.start(now);
+        if (_heartbeat_timer.expired(context.timestamp)) {
+            _heartbeat_timer.start(context.timestamp);
 
-            (void) transport_link.writeByte(0xAA);
+            (void) context.transport_link.writeByte(0xAA);
         }
     }
 
