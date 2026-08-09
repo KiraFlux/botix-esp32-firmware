@@ -11,6 +11,7 @@
 
 #include "botix/config/Config.hpp"
 #include "botix/config/DeviceConfig.hpp"
+#include "botix/config/UserConfig.hpp"
 #include "botix/service/ConfigService.hpp"
 
 #include "botix/system/System.hpp"
@@ -21,7 +22,7 @@ struct ConfigSystem : System<ConfigSystem, void()> {
 
     template<kf::implements<config::ConfigTag> ConfigImpl> struct Strategy {
 
-        static void load(kf::Bytes bytes) {
+        static void load(kf::Bytes bytes) noexcept {
             auto maybe_config = ConfigImpl::fromBytes(bytes);
             if (maybe_config.isNone()) { return; }
 
@@ -31,10 +32,17 @@ struct ConfigSystem : System<ConfigSystem, void()> {
             }
         }
 
-        static void reset(kf::Bytes bytes) {
+        static void reset(kf::Bytes bytes) noexcept {
             if (auto maybe_config = ConfigImpl::fromBytes(bytes); maybe_config.isSome()) {
                 maybe_config.unwrap().reset();
             }
+        }
+
+        static void init(service::ConfigService &service) noexcept {
+            service.onLoad(load);
+            service.resettingStrategy(reset);
+            service.requestLoad();
+            service.sync();
         }
     };
 
@@ -47,6 +55,7 @@ private:
 
 public:
     config::DeviceConfig device{};
+    config::UserConfig user{};
 
     service::ConfigService device_service{{
         .nvs = _nvs,
@@ -55,23 +64,28 @@ public:
         .config_bytes = device.bytes(),
     }};
 
+    service::ConfigService user_service{{
+        .nvs = _nvs,
+        .key = "usr-cfg",
+        .sync_timer_config = _sync_timer_config,
+        .config_bytes = user.bytes(),
+    }};
+
 private:
     BOTIX_IMPL_SYSTEM(ConfigSystem, void());
 
     void initImpl() noexcept {
-        device_service.onLoad(Strategy<config::DeviceConfig>::load);
-        device_service.resettingStrategy(Strategy<config::DeviceConfig>::reset);
-
         if (_nvs.init().isError()) {
             // _logger.error("NVS init failed");
         }
 
-        device_service.requestLoad();
-        device_service.sync();
+        Strategy<config::DeviceConfig>::init(device_service);
+        Strategy<config::UserConfig>::init(user_service);
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
         device_service.poll(now);
+        user_service.poll(now);
     }
 };
 

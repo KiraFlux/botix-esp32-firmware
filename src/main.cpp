@@ -8,7 +8,6 @@
 #include "botix/OutgoingTelemetry.hpp"
 #include "botix/protocol/Kind.hpp"
 #include "botix/transport/Address.hpp"
-#include "botix/transport/Kind.hpp"
 
 #include "botix/system/BehaviorSystem.hpp"
 #include "botix/system/ConfigSystem.hpp"
@@ -71,7 +70,7 @@ void kf::main(kf::Init &init) {
 
     // transport
 
-    system_transport.init(botix::transport::Kind::Espnow);
+    system_transport.init(system_config.user.init_transport_kind);
 
     system_transport.onReceive([](auto const &context) -> void {
         system_protocol.link.receive({
@@ -96,7 +95,7 @@ void kf::main(kf::Init &init) {
 
     // protocol
 
-    system_protocol.init(botix::protocol::Kind::Mavlink);
+    system_protocol.init(system_config.user.init_protocol_kind);
 
     system_protocol.onRawFallback([&init](botix::transport::Address const &address, auto buffer) -> void {
         (void) address;
@@ -116,6 +115,7 @@ void kf::main(kf::Init &init) {
 
     // loop
 
+    // TODO: CLI system
     auto const on_input_char = [&init](char c) -> void {
         switch (c) {
             case 'o': {
@@ -128,12 +128,14 @@ void kf::main(kf::Init &init) {
 
             case 'r': {
                 system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Raw));
+                system_config.user.init_protocol_kind = botix::protocol::Kind::Raw;
                 init.logger.debug("protocol: Raw");
                 return;
             }
 
             case 'm': {
                 system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Mavlink));
+                system_config.user.init_protocol_kind = botix::protocol::Kind::Mavlink;
                 init.logger.debug("protocol: Mavlink");
                 return;
             }
@@ -152,6 +154,7 @@ void kf::main(kf::Init &init) {
         system_config.poll(now);
         system_hardware.poll(now);
 
+        // TODO: CLI poll
         {
             while (init.io.availableForRead() > 0) {
                 if (auto const read = init.io.readPacket<char>(); read.isOk()) {
