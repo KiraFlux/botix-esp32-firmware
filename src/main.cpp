@@ -5,32 +5,31 @@
 #include <kf/rtos/Clock.hpp>
 #include <kf/rtos/Task.hpp>
 
-#include "botix/config/DeviceConfig.hpp"
-
 #include "botix/OutgoingTelemetry.hpp"
 #include "botix/protocol/Kind.hpp"
 #include "botix/transport/Address.hpp"
 #include "botix/transport/Kind.hpp"
 
 #include "botix/system/BehaviorSystem.hpp"
+#include "botix/system/ConfigSystem.hpp"
 #include "botix/system/HardwareSystem.hpp"
 #include "botix/system/ProtocolSystem.hpp"
 #include "botix/system/TelemetrySystem.hpp"
 #include "botix/system/TransportSystem.hpp"
-
-static auto root_config{botix::config::DeviceConfig::defaults()};
 
 void kf::main(kf::Init &init) {
     init.logger.debug("Starting");
 
     // system instances
 
+    static botix::system::ConfigSystem system_config{};
+
     static botix::system::HardwareSystem system_hardware{{
-        .config = root_config,
+        .config = system_config.device,
     }};
 
     static botix::system::TelemetrySystem system_telemetry{{
-        .config = root_config,
+        .config = system_config.device,
     }};
 
     static botix::system::TransportSystem system_transport{{
@@ -38,18 +37,22 @@ void kf::main(kf::Init &init) {
     }};
 
     static botix::system::ProtocolSystem system_protocol{{
-        .config = root_config,
+        .config = system_config.device,
         .transport_link = system_transport.link,
         .outgoing_telemetry = system_telemetry.outgoing,
     }};
 
     static botix::system::BehaviorSystem system_behavior{{
-        .config = root_config,
+        .config = system_config.device,
         .periphery = system_hardware.periphery,
         .incoming_telemetry = system_telemetry.incoming,
     }};
 
     // system initialization
+
+    // config
+
+    system_config.init();
 
     // hardware
 
@@ -146,6 +149,7 @@ void kf::main(kf::Init &init) {
         system_transport.poll(now);
         system_protocol.poll(now);
         system_behavior.poll(now);
+        system_config.poll(now);
         system_hardware.poll(now);
 
         {
