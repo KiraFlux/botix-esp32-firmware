@@ -32,8 +32,8 @@ void kf::main(kf::Init &init) {
     channel.echo = true;
 
     auto maybe_command = console_service.addCommand(init.arena, "cmd", [&init](botix::service::ConsoleService::Command::Context const &context) {
-        auto const str = context.arguments[0].string.value;
-        auto const flag = context.arguments[0].boolean.value;
+        auto const str = context.arguments[0].string();
+        auto const flag = context.arguments[1].boolean();
 
         context.output.print("mode: '{}', flag={}", str, flag);
     });
@@ -51,8 +51,16 @@ void kf::main(kf::Init &init) {
         "auto",
     };
 
-    (void) command.addStringArgument("my_string", {{my_string_options}});
-    (void) command.addBooleanArgument("my_flag", {kf::some(true)});
+    (void) command.addStringArgument(
+        "my_string",
+        {
+            .params{.default_value = kf::some(kf::StringView{"auto"})},
+            .options{my_string_options},
+        });
+
+    (void) command.addBooleanArgument("my_flag", {.params{.default_value = kf::some(true)}});
+
+    // (void) command.addIntegerArgument("my_int", {{.min_value = kf::none}});
 
     auto read_buffer = init.arena.allocate(100);
 
