@@ -1,0 +1,3 @@
+# Host-side tooling for tools/botix_console.py
+pymavlink>=2.4.37
+zeroconf>=0.131.0

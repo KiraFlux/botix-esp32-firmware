@@ -5,6 +5,7 @@
 
 #include <utility>
 
+#include <kf/StringView.hpp>
 #include <kf/units.hpp>
 
 #include "botix/OutgoingTelemetry.hpp"
@@ -44,7 +45,18 @@ struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
     }
 
     void onMavlinkFallback(auto &&f) noexcept {
-        _registry.mavlink.callback(std::forward<decltype(f)>(f));
+        _registry.mavlink.onMessageFallback(std::forward<decltype(f)>(f));
+    }
+
+    /// @brief Route console text arriving over MAVLink `SERIAL_CONTROL`
+    void onSerialControl(auto &&f) noexcept {
+        _registry.mavlink.onSerialControl(std::forward<decltype(f)>(f));
+    }
+
+    /// @brief Send console output back over `SERIAL_CONTROL`
+    /// @note Only reaches the operator while the MAVLink protocol is the active one
+    [[nodiscard]] bool sendSerialControl(kf::StringView text) noexcept {
+        return _registry.mavlink.sendSerialControl(_protocol_poll_context.transport_link, text);
     }
 
     protocol::Link link{};

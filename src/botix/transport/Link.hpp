@@ -44,7 +44,11 @@ struct Link final :
     }
 
     [[nodiscard]] constexpr auto activeAddress() const noexcept -> kf::Option<Address const &> {
-        return _transport.isSome() ? kf::none : _transport.unwrap().activeAddress();
+        return _transport.isNone() ? kf::none : _transport.unwrap().activeAddress();
+    }
+
+    [[nodiscard]] constexpr auto kind() const noexcept -> kf::Option<Kind> {
+        return _transport.isNone() ? kf::none : kf::some(_transport.unwrap().kind());
     }
 
     // control
