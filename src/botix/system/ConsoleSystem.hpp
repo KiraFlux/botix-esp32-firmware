@@ -9,7 +9,6 @@
 #include <kf/Logger.hpp>
 #include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
-#include <kf/StringView.hpp>
 #include <kf/units.hpp>
 
 #include "botix/command/ConfigCommands.hpp"
@@ -46,13 +45,20 @@ struct ConsoleSystem : System<ConsoleSystem, bool()> {
 
     explicit ConsoleSystem(Dependencies deps) noexcept :
         _arena{deps.arena},
-        _registry{deps.registry},
-        _device_config_service{deps.device_config_service},
-        _user_config_service{deps.user_config_service},
-        _network{deps.network},
-        _transport{deps.transport},
-        _protocol{deps.protocol},
-        service{deps.config, deps.arena} {}
+        service{deps.config, deps.arena},
+        _system_commands{{
+            .console = service,
+            .network = deps.network,
+        }},
+        _transport_commands{{
+            .transport = deps.transport,
+            .protocol = deps.protocol,
+        }},
+        _config_commands{{
+            .registry = deps.registry,
+            .device_service = deps.device_config_service,
+            .user_service = deps.user_config_service,
+        }} {}
 
     /// @brief Open a channel delivering completed output lines to `sink`
     [[nodiscard]] auto addChannel(auto &&sink) noexcept -> kf::Option<Channel &> {
@@ -75,27 +81,25 @@ private:
     kf::Logger _logger{"ConsoleSystem"};
 
     kf::Arena &_arena;
-    config::Registry &_registry;
-    service::ConfigService &_device_config_service;
-    service::ConfigService &_user_config_service;
-    service::NetworkService &_network;
-    TransportSystem &_transport;
-    ProtocolSystem &_protocol;
+
+    command::SystemCommands _system_commands;
+    command::TransportCommands _transport_commands;
+    command::ConfigCommands _config_commands;
 
     BOTIX_IMPL_SYSTEM(ConsoleSystem, bool());
 
     bool initImpl() noexcept {
-        if (not command::registerSystemCommands(service, _arena, _network)) {
+        if (not _system_commands.registerIn(service, _arena)) {
             _logger.error("system commands registration failed");
             return false;
         }
 
-        if (not command::registerTransportCommands(service, _arena, _transport, _protocol)) {
+        if (not _transport_commands.registerIn(service, _arena)) {
             _logger.error("transport commands registration failed");
             return false;
         }
 
-        if (not command::registerConfigCommands(service, _arena, _registry, _device_config_service, _user_config_service)) {
+        if (not _config_commands.registerIn(service, _arena)) {
             _logger.error("config commands registration failed");
             return false;
         }

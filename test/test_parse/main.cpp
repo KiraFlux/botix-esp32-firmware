@@ -15,69 +15,69 @@ void setUp() {}
 void tearDown() {}
 
 static void integer_accepts_decimal() {
-    TEST_ASSERT_EQUAL_INT64(0, parse::integer("0").unwrap());
-    TEST_ASSERT_EQUAL_INT64(42, parse::integer("42").unwrap());
-    TEST_ASSERT_EQUAL_INT64(-42, parse::integer("-42").unwrap());
-    TEST_ASSERT_EQUAL_INT64(7, parse::integer("+7").unwrap());
-    TEST_ASSERT_EQUAL_INT64(2147483647ll, parse::integer("2147483647").unwrap());
-    TEST_ASSERT_EQUAL_INT64(-2147483648ll, parse::integer("-2147483648").unwrap());
+    TEST_ASSERT_EQUAL_INT64(0, Parse::integer("0").unwrap());
+    TEST_ASSERT_EQUAL_INT64(42, Parse::integer("42").unwrap());
+    TEST_ASSERT_EQUAL_INT64(-42, Parse::integer("-42").unwrap());
+    TEST_ASSERT_EQUAL_INT64(7, Parse::integer("+7").unwrap());
+    TEST_ASSERT_EQUAL_INT64(2147483647ll, Parse::integer("2147483647").unwrap());
+    TEST_ASSERT_EQUAL_INT64(-2147483648ll, Parse::integer("-2147483648").unwrap());
 }
 
 static void integer_accepts_hex() {
-    TEST_ASSERT_EQUAL_INT64(255, parse::integer("0xFF").unwrap());
-    TEST_ASSERT_EQUAL_INT64(255, parse::integer("0xff").unwrap());
-    TEST_ASSERT_EQUAL_INT64(16, parse::integer("0x10").unwrap());
+    TEST_ASSERT_EQUAL_INT64(255, Parse::integer("0xFF").unwrap());
+    TEST_ASSERT_EQUAL_INT64(255, Parse::integer("0xff").unwrap());
+    TEST_ASSERT_EQUAL_INT64(16, Parse::integer("0x10").unwrap());
 }
 
 static void integer_rejects_malformed() {
-    TEST_ASSERT_TRUE(parse::integer("").isNone());
-    TEST_ASSERT_TRUE(parse::integer("-").isNone());
-    TEST_ASSERT_TRUE(parse::integer("+").isNone());
-    TEST_ASSERT_TRUE(parse::integer("0x").isNone());
-    TEST_ASSERT_TRUE(parse::integer("12a").isNone());
-    TEST_ASSERT_TRUE(parse::integer("1.5").isNone());
-    TEST_ASSERT_TRUE(parse::integer(" 12").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("-").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("+").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("0x").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("12a").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("1.5").isNone());
+    TEST_ASSERT_TRUE(Parse::integer(" 12").isNone());
 }
 
 static void integer_rejects_overflow() {
-    TEST_ASSERT_TRUE(parse::integer("99999999999999999999").isNone());
-    TEST_ASSERT_TRUE(parse::integer("0xFFFFFFFFFFFFFFFFF").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("99999999999999999999").isNone());
+    TEST_ASSERT_TRUE(Parse::integer("0xFFFFFFFFFFFFFFFFF").isNone());
 }
 
 static void real_accepts_decimal() {
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, parse::real("0").unwrap());
-    TEST_ASSERT_EQUAL_FLOAT(1.5f, parse::real("1.5").unwrap());
-    TEST_ASSERT_EQUAL_FLOAT(-2.25f, parse::real("-2.25").unwrap());
-    TEST_ASSERT_EQUAL_FLOAT(10.0f, parse::real("10").unwrap());
-    TEST_ASSERT_EQUAL_FLOAT(0.5f, parse::real(".5").unwrap());
-    TEST_ASSERT_EQUAL_FLOAT(3.0f, parse::real("3.").unwrap());
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, Parse::real("0").unwrap());
+    TEST_ASSERT_EQUAL_FLOAT(1.5f, Parse::real("1.5").unwrap());
+    TEST_ASSERT_EQUAL_FLOAT(-2.25f, Parse::real("-2.25").unwrap());
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, Parse::real("10").unwrap());
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, Parse::real(".5").unwrap());
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, Parse::real("3.").unwrap());
 }
 
 static void real_rejects_malformed() {
-    TEST_ASSERT_TRUE(parse::real("").isNone());
-    TEST_ASSERT_TRUE(parse::real(".").isNone());
-    TEST_ASSERT_TRUE(parse::real("1.2.3").isNone());
-    TEST_ASSERT_TRUE(parse::real("abc").isNone());
+    TEST_ASSERT_TRUE(Parse::real("").isNone());
+    TEST_ASSERT_TRUE(Parse::real(".").isNone());
+    TEST_ASSERT_TRUE(Parse::real("1.2.3").isNone());
+    TEST_ASSERT_TRUE(Parse::real("abc").isNone());
 
     // Exponent notation is deliberately unsupported
-    TEST_ASSERT_TRUE(parse::real("1e5").isNone());
+    TEST_ASSERT_TRUE(Parse::real("1e5").isNone());
 }
 
 static void ipv4_accepts_dotted_quad() {
-    TEST_ASSERT_EQUAL_UINT32(0u, parse::ipv4("0.0.0.0").unwrap());
-    TEST_ASSERT_EQUAL_UINT32(0xC0A8012Au, parse::ipv4("192.168.1.42").unwrap());
-    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, parse::ipv4("255.255.255.255").unwrap());
-    TEST_ASSERT_EQUAL_UINT32(0x0A000001u, parse::ipv4("10.0.0.1").unwrap());
+    TEST_ASSERT_EQUAL_UINT32(0u, Parse::ipv4("0.0.0.0").unwrap());
+    TEST_ASSERT_EQUAL_UINT32(0xC0A8012Au, Parse::ipv4("192.168.1.42").unwrap());
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, Parse::ipv4("255.255.255.255").unwrap());
+    TEST_ASSERT_EQUAL_UINT32(0x0A000001u, Parse::ipv4("10.0.0.1").unwrap());
 }
 
 static void ipv4_rejects_malformed() {
-    TEST_ASSERT_TRUE(parse::ipv4("192.168.1").isNone());
-    TEST_ASSERT_TRUE(parse::ipv4("192.168.1.").isNone());
-    TEST_ASSERT_TRUE(parse::ipv4("192.168.1.256").isNone());
-    TEST_ASSERT_TRUE(parse::ipv4("192.168.1.1.1").isNone());
-    TEST_ASSERT_TRUE(parse::ipv4("").isNone());
-    TEST_ASSERT_TRUE(parse::ipv4("a.b.c.d").isNone());
-    TEST_ASSERT_TRUE(parse::ipv4("192.168.1.-1").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("192.168.1").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("192.168.1.").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("192.168.1.256").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("192.168.1.1.1").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("a.b.c.d").isNone());
+    TEST_ASSERT_TRUE(Parse::ipv4("192.168.1.-1").isNone());
 }
 
 int main() {

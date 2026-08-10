@@ -11,11 +11,11 @@
 
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/Periphery.hpp"
-#include "botix/config/DeviceConfig.hpp"
 #include "botix/behavior/Behavior.hpp"
 #include "botix/behavior/Kind.hpp"
 #include "botix/behavior/Link.hpp"
 #include "botix/behavior/Registry.hpp"
+#include "botix/config/DeviceConfig.hpp"
 #include "botix/service/MixerService.hpp"
 #include "botix/transport/Link.hpp"
 

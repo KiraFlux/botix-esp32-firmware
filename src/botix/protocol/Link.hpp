@@ -23,7 +23,7 @@ struct Link : kf::mixin::NonCopyable {
         _protocol = kf::someRef(new_protocol);
     }
 
-    void poll(Protocol::PollContext const & context) noexcept {
+    void poll(Protocol::PollContext const &context) noexcept {
         if (_protocol.isSome()) {
             _protocol.unwrap().poll(context);
         }

@@ -15,28 +15,31 @@
 #include <kf/mixin/Configured.hpp>
 #include <kf/mixin/Resettable.hpp>
 
+#include "botix/transport/Ipv4.hpp"
+
+#include "botix/service/NetworkState.hpp"
 #include "botix/service/Service.hpp"
 
 namespace botix::internal {
 
-/// @brief Maximum stored length of a text network field, excluding the terminator
-enum : kf::usize {
-    network_ssid_capacity = 32,
-    network_password_capacity = 64,
-    network_hostname_capacity = 32,
-};
-
 /// @brief Configuration of the WiFi station link and mDNS advertisement
 struct NetworkServiceConfig : kf::mixin::Resettable<NetworkServiceConfig> {
 
+    /// @brief Maximum stored text length, excluding the terminator
+    enum : kf::usize {
+        ssid_capacity = 32,
+        password_capacity = 64,
+        hostname_capacity = 32,
+    };
+
     /// @brief Access point to join
-    char ssid[network_ssid_capacity + 1];
+    char ssid[ssid_capacity + 1];
 
     /// @brief WPA passphrase, empty for an open network
-    char password[network_password_capacity + 1];
+    char password[password_capacity + 1];
 
     /// @brief mDNS name, reachable as `<hostname>.local`
-    char hostname[network_hostname_capacity + 1];
+    char hostname[hostname_capacity + 1];
 
     /// @brief Delay before a stalled association attempt is retried
     kf::Timer::Config retry_timer;
@@ -77,14 +80,7 @@ struct NetworkService final :
 
     using Config = internal::NetworkServiceConfig;
 
-    enum class State : kf::u8 {
-        /// @brief Station disabled by configuration
-        Disabled,
-        /// @brief Association in progress
-        Connecting,
-        /// @brief Associated, address acquired, mDNS published
-        Connected,
-    };
+    using State = NetworkState;
 
     struct Dependencies {
         Config const &config;
@@ -100,27 +96,15 @@ struct NetworkService final :
         return _state;
     }
 
-    [[nodiscard]] static kf::StringView stateName(State state) noexcept {
-        switch (state) {
-            case State::Connecting: return "connecting";
-            case State::Connected: return "connected";
-            case State::Disabled:
-            default: return "disabled";
-        }
-    }
-
-    /// @brief Local IPv4 address in host byte order, zero when not associated
-    [[nodiscard]] kf::u32 localAddress() const noexcept {
+    /// @brief Local address, unset when not associated
+    [[nodiscard]] transport::Ipv4 localAddress() const noexcept {
         if (_state != State::Connected) {
-            return 0;
+            return {};
         }
 
         auto const ip = WiFi.localIP();
 
-        return (static_cast<kf::u32>(ip[0]) << 24) |
-               (static_cast<kf::u32>(ip[1]) << 16) |
-               (static_cast<kf::u32>(ip[2]) << 8) |
-               static_cast<kf::u32>(ip[3]);
+        return transport::Ipv4::fromOctets(ip[0], ip[1], ip[2], ip[3]);
     }
 
     /// @brief Drop the current association so the next poll re-reads configuration
@@ -166,7 +150,7 @@ private:
 
         (void) WiFi.setHostname(c.hostname);
 
-        logger.info("Joining '{}'", asView(c.ssid, internal::network_ssid_capacity));
+        logger.info("Joining '{}'", asView(c.ssid, Config::ssid_capacity));
 
         (void) WiFi.begin(c.ssid, c.password[0] == '\0' ? nullptr : c.password);
 
@@ -186,7 +170,7 @@ private:
         MDNS.addService("botix", "udp", _service_port);
         _mdns_started = true;
 
-        logger.info("Published as '{}.local' on port {}", asView(c.hostname, internal::network_hostname_capacity), _service_port);
+        logger.info("Published as '{}.local' on port {}", asView(c.hostname, Config::hostname_capacity), _service_port);
     }
 
     BOTIX_IMPL_SERVICE(Self);

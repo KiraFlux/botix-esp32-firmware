@@ -6,6 +6,8 @@
 #include <kf/Arena.hpp>
 #include <kf/primitives.hpp>
 
+#include <kf/mixin/NonCopyable.hpp>
+
 #include "botix/protocol/Kind.hpp"
 #include "botix/service/ConsoleService.hpp"
 #include "botix/system/ProtocolSystem.hpp"
@@ -14,158 +16,136 @@
 
 namespace botix::command {
 
-namespace internal {
+/// @brief The `transport` and `protocol` commands
+struct TransportCommands : kf::mixin::NonCopyable {
 
-enum class TransportAction : kf::u8 {
-    Status,
-    Use,
-    Connect,
-    Disconnect,
-};
-
-inline void printTransportStatus(
-    service::ConsoleService::Channel::Output &output,
-    system::TransportSystem &transport) noexcept {
-
-    auto const kind = transport.link.kind();
-
-    output.print(
-        "transport: {}",
-        kind.isNone()
-            ? "none"
-            : (kind.unwrap() == transport::Kind::Wifi ? "wifi" : "espnow"));
-
-    output.print("connected: {}", transport.link.connected());
-
-    auto const address = transport.link.activeAddress();
-    if (address.isNone()) {
-        output.print("peer: none");
-        return;
-    }
-
-    auto const &peer = address.unwrap();
-
-    if (peer.kind() == transport::Kind::Wifi) {
-        auto const &endpoint = peer.endpoint();
-        output.print(
-            "peer: {}.{}.{}.{}:{}",
-            endpoint.octet(0), endpoint.octet(1), endpoint.octet(2), endpoint.octet(3),
-            endpoint.port);
-    } else {
-        auto const &mac = peer.mac();
-        output.print(
-            "peer: {}:{}:{}:{}:{}:{}",
-            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    }
-}
-
-}// namespace internal
-
-/// @brief Register `transport` and `protocol`
-/// @return false when the console ran out of command or argument capacity
-[[nodiscard]] inline bool registerTransportCommands(
-    service::ConsoleService &console,
-    kf::Arena &arena,
-    system::TransportSystem &transport,
-    system::ProtocolSystem &protocol) noexcept {
-
-    struct Context {
+    struct Dependencies {
         system::TransportSystem &transport;
         system::ProtocolSystem &protocol;
     };
 
-    static Context context{transport, protocol};
+    explicit constexpr TransportCommands(Dependencies deps) noexcept :
+        _transport{deps.transport},
+        _protocol{deps.protocol} {}
 
-    // transport <action> [kind]
+    [[nodiscard]] bool registerIn(service::ConsoleService &console, kf::Arena &arena) noexcept {
+        return registerTransport(console, arena) and registerProtocol(console, arena);
+    }
 
-    {
-        auto maybe = console.addCommand(arena, "transport", [](auto const &call) {
-            auto const action = static_cast<internal::TransportAction>(call.arguments[0].enumIndex());
-            auto const kind = static_cast<transport::Kind>(call.arguments[1].enumIndex());
+private:
+    using Output = service::ConsoleService::Channel::Output;
+    using Call = service::ConsoleService::Command::Context;
+    using EnumItem = service::ConsoleService::Command::Argument::EnumItem;
 
-            switch (action) {
-                case internal::TransportAction::Status:
-                    internal::printTransportStatus(call.output, context.transport);
-                    return;
+    enum class Action : kf::u8 {
+        Status,
+        Use,
+        Connect,
+        Disconnect,
+    };
 
-                case internal::TransportAction::Use:
-                    context.transport.use(kind);
-                    call.output.print("active transport set; 'config set user.boot.transport' makes it persist");
-                    internal::printTransportStatus(call.output, context.transport);
-                    return;
+    static constexpr EnumItem _actions[]{
+        {"status", Action::Status},
+        {"use", Action::Use},
+        {"connect", Action::Connect},
+        {"disconnect", Action::Disconnect},
+    };
 
-                case internal::TransportAction::Connect: {
-                    if (not context.transport.connectConfiguredWifi()) {
-                        call.output.error("connect failed; check user.udp.remote_ip and remote_port");
-                        return;
-                    }
-                    internal::printTransportStatus(call.output, context.transport);
-                    return;
-                }
+    static constexpr EnumItem _transport_kinds[]{
+        {"espnow", transport::Kind::Espnow},
+        {"wifi", transport::Kind::Wifi},
+    };
 
-                case internal::TransportAction::Disconnect:
-                    context.transport.link.disconnect();
-                    call.output.print("disconnected");
-                    return;
+    static constexpr EnumItem _protocol_kinds[]{
+        {"raw", protocol::Kind::Raw},
+        {"mavlink", protocol::Kind::Mavlink},
+    };
 
-                default:
-                    call.output.error("unhandled action");
-                    return;
-            }
-        });
+    system::TransportSystem &_transport;
+    system::ProtocolSystem &_protocol;
 
-        if (maybe.isNone()) { return false; }
+    [[nodiscard]] bool registerTransport(service::ConsoleService &console, kf::Arena &arena) noexcept {
+        auto maybe = console.addCommand(arena, "transport", [this](auto const &call) { executeTransport(call); });
 
-        static service::ConsoleService::Command::Argument::EnumItem const actions[]{
-            {"status", internal::TransportAction::Status},
-            {"use", internal::TransportAction::Use},
-            {"connect", internal::TransportAction::Connect},
-            {"disconnect", internal::TransportAction::Disconnect},
-        };
+        if (maybe.isNone()) {
+            return false;
+        }
 
-        static service::ConsoleService::Command::Argument::EnumItem const kinds[]{
-            {"espnow", transport::Kind::Espnow},
-            {"wifi", transport::Kind::Wifi},
-        };
+        auto &command = maybe.unwrap();
 
-        if (not maybe.unwrap().addEnumArgument("action", {.items{actions}})) { return false; }
+        if (not command.addEnumArgument("action", {.items{_actions}})) { return false; }
 
         // Only `use` consumes it, so it carries a default
-        if (not maybe.unwrap().addEnumArgument(
-                "kind",
-                {
-                    .params{.default_value = kf::some(static_cast<kf::usize>(transport::Kind::Espnow))},
-                    .items{kinds},
-                })) {
+        return command.addEnumArgument(
+            "kind",
+            {
+                .params{.default_value = kf::some(static_cast<kf::usize>(transport::Kind::Espnow))},
+                .items{_transport_kinds},
+            });
+    }
+
+    [[nodiscard]] bool registerProtocol(service::ConsoleService &console, kf::Arena &arena) noexcept {
+        auto maybe = console.addCommand(arena, "protocol", [this](auto const &call) { executeProtocol(call); });
+
+        if (maybe.isNone()) {
             return false;
+        }
+
+        return maybe.unwrap().addEnumArgument("kind", {.items{_protocol_kinds}});
+    }
+
+    void executeTransport(Call const &call) noexcept {
+        auto const action = static_cast<Action>(call.arguments[0].enumIndex());
+        auto const kind = static_cast<transport::Kind>(call.arguments[1].enumIndex());
+
+        switch (action) {
+            case Action::Status:
+                return printStatus(call.output);
+
+            case Action::Use:
+                _transport.use(kind);
+                call.output.print("active transport set; 'config set user.boot.transport' makes it persist");
+                return printStatus(call.output);
+
+            case Action::Connect:
+                if (not _transport.connectConfiguredWifi()) {
+                    call.output.error("connect failed; check user.udp.remote_ip and remote_port");
+                    return;
+                }
+                return printStatus(call.output);
+
+            case Action::Disconnect:
+                _transport.link.disconnect();
+                return call.output.print("disconnected");
+
+            default:
+                return call.output.error("unhandled action");
         }
     }
 
-    // protocol <kind>
+    void executeProtocol(Call const &call) noexcept {
+        auto const kind = static_cast<protocol::Kind>(call.arguments[0].enumIndex());
 
-    {
-        auto maybe = console.addCommand(arena, "protocol", [](auto const &call) {
-            auto const kind = static_cast<protocol::Kind>(call.arguments[0].enumIndex());
+        _protocol.link.set(_protocol.get(kind));
 
-            context.protocol.link.set(context.protocol.get(kind));
-
-            call.output.print(
-                "protocol: {}",
-                kind == protocol::Kind::Mavlink ? "mavlink" : "raw");
-            call.output.print("note: 'config set user.boot.protocol' makes it persist");
-        });
-
-        if (maybe.isNone()) { return false; }
-
-        static service::ConsoleService::Command::Argument::EnumItem const kinds[]{
-            {"raw", protocol::Kind::Raw},
-            {"mavlink", protocol::Kind::Mavlink},
-        };
-
-        if (not maybe.unwrap().addEnumArgument("kind", {.items{kinds}})) { return false; }
+        call.output.print("protocol: {}", protocol::name(kind));
+        call.output.print("note: 'config set user.boot.protocol' makes it persist");
     }
 
-    return true;
-}
+    void printStatus(Output &output) const noexcept {
+        auto const kind = _transport.link.kind();
+
+        output.print("transport: {}", kind.isNone() ? kf::StringView{"none"} : transport::name(kind.unwrap()));
+        output.print("connected: {}", _transport.link.connected());
+
+        auto const address = _transport.link.activeAddress();
+
+        if (address.isNone()) {
+            output.print("peer: none");
+        } else {
+            output.print("peer: {}", address.unwrap());
+        }
+    }
+};
 
 }// namespace botix::command

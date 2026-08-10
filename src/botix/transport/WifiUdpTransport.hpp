@@ -18,6 +18,8 @@
 #include <kf/mixin/Resettable.hpp>
 
 #include "botix/transport/Address.hpp"
+#include "botix/transport/IpEndpoint.hpp"
+#include "botix/transport/Ipv4.hpp"
 #include "botix/transport/Receiver.hpp"
 #include "botix/transport/Transport.hpp"
 
@@ -36,7 +38,7 @@ private:
     KF_IMPL_RESETTABLE(WifiUdpTransportConfig);
     constexpr void resetImpl() noexcept {
         local_port = 14550;// MAVLink default
-        remote.address = 0;
+        remote.address.value = 0;
         remote.port = 14555;
     }
 };
@@ -111,10 +113,10 @@ struct WifiUdpTransport final :
         }
 
         IPAddress const ip{
-            remote.octet(0),
-            remote.octet(1),
-            remote.octet(2),
-            remote.octet(3),
+            remote.address.octet(0),
+            remote.address.octet(1),
+            remote.address.octet(2),
+            remote.address.octet(3),
         };
 
         if (_udp.beginPacket(ip, remote.port) != 1) {
@@ -181,7 +183,7 @@ private:
             auto const remote_ip = _udp.remoteIP();
 
             IpEndpoint source{};
-            source.address = IpEndpoint::pack(remote_ip[0], remote_ip[1], remote_ip[2], remote_ip[3]);
+            source.address = Ipv4::fromOctets(remote_ip[0], remote_ip[1], remote_ip[2], remote_ip[3]);
             source.port = static_cast<kf::u16>(_udp.remotePort());
 
             if (source.empty()) {

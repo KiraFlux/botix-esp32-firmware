@@ -38,15 +38,15 @@ static constexpr EnumOption mode_options[]{
 };
 
 static constexpr Field fields[]{
-    {"flag", offsetof(Sample, flag), sizeof(bool), FieldKind::Boolean, false, {}, kf::none, kf::none},
-    {"small", offsetof(Sample, small_signed), sizeof(kf::i8), FieldKind::Signed, false, {}, kf::none, kf::none},
-    {"port", offsetof(Sample, port), sizeof(kf::u16), FieldKind::Unsigned, false, {}, kf::none, kf::none},
-    {"wide", offsetof(Sample, wide_signed), sizeof(kf::i32), FieldKind::Signed, false, {}, kf::none, kf::none},
-    {"gain", offsetof(Sample, gain), sizeof(kf::f32), FieldKind::Real, false, {}, kf::some(0.0), kf::some(10.0)},
-    {"scale", offsetof(Sample, scale), sizeof(kf::f64), FieldKind::Real, false, {}, kf::none, kf::none},
-    {"ip", offsetof(Sample, ipv4), sizeof(kf::u32), FieldKind::Ipv4, false, {}, kf::none, kf::none},
-    {"mode", offsetof(Sample, mode), sizeof(kf::u8), FieldKind::Enumerated, false, {mode_options}, kf::none, kf::none},
-    {"text", offsetof(Sample, text), sizeof(Sample::text), FieldKind::Text, false, {}, kf::none, kf::none},
+    {"flag", offsetof(Sample, flag), sizeof(bool), Kind::Boolean, false, {}, kf::none, kf::none},
+    {"small", offsetof(Sample, small_signed), sizeof(kf::i8), Kind::Signed, false, {}, kf::none, kf::none},
+    {"port", offsetof(Sample, port), sizeof(kf::u16), Kind::Unsigned, false, {}, kf::none, kf::none},
+    {"wide", offsetof(Sample, wide_signed), sizeof(kf::i32), Kind::Signed, false, {}, kf::none, kf::none},
+    {"gain", offsetof(Sample, gain), sizeof(kf::f32), Kind::Real, false, {}, kf::some(0.0), kf::some(10.0)},
+    {"scale", offsetof(Sample, scale), sizeof(kf::f64), Kind::Real, false, {}, kf::none, kf::none},
+    {"ip", offsetof(Sample, ipv4), sizeof(kf::u32), Kind::Ipv4, false, {}, kf::none, kf::none},
+    {"mode", offsetof(Sample, mode), sizeof(kf::u8), Kind::Enumerated, false, {mode_options}, kf::none, kf::none},
+    {"text", offsetof(Sample, text), sizeof(Sample::text), Kind::Text, false, {}, kf::none, kf::none},
 };
 
 static Sample sample{};
@@ -74,95 +74,95 @@ void tearDown() {
 }
 
 static void boolean_round_trip() {
-    TEST_ASSERT_TRUE(access::set(section, field("flag"), "true") == access::SetStatus::Ok);
-    TEST_ASSERT_TRUE(access::readBoolean(section, field("flag")));
+    TEST_ASSERT_TRUE(Access::set(section, field("flag"), "true") == SetStatus::Ok);
+    TEST_ASSERT_TRUE(Access::readBoolean(section, field("flag")));
 
-    TEST_ASSERT_TRUE(access::set(section, field("flag"), "no") == access::SetStatus::Ok);
-    TEST_ASSERT_FALSE(access::readBoolean(section, field("flag")));
+    TEST_ASSERT_TRUE(Access::set(section, field("flag"), "no") == SetStatus::Ok);
+    TEST_ASSERT_FALSE(Access::readBoolean(section, field("flag")));
 
-    TEST_ASSERT_TRUE(access::set(section, field("flag"), "maybe") == access::SetStatus::Malformed);
+    TEST_ASSERT_TRUE(Access::set(section, field("flag"), "maybe") == SetStatus::Malformed);
 }
 
 static void signed_respects_width() {
-    TEST_ASSERT_TRUE(access::set(section, field("small"), "-128") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_INT64(-128, access::readSigned(section, field("small")));
+    TEST_ASSERT_TRUE(Access::set(section, field("small"), "-128") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_INT64(-128, Access::readSigned(section, field("small")));
 
-    TEST_ASSERT_TRUE(access::set(section, field("small"), "127") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_INT64(127, access::readSigned(section, field("small")));
+    TEST_ASSERT_TRUE(Access::set(section, field("small"), "127") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_INT64(127, Access::readSigned(section, field("small")));
 
     // Rejected values must leave the stored one alone
-    TEST_ASSERT_TRUE(access::set(section, field("small"), "128") == access::SetStatus::OutOfRange);
-    TEST_ASSERT_EQUAL_INT64(127, access::readSigned(section, field("small")));
+    TEST_ASSERT_TRUE(Access::set(section, field("small"), "128") == SetStatus::OutOfRange);
+    TEST_ASSERT_EQUAL_INT64(127, Access::readSigned(section, field("small")));
 
-    TEST_ASSERT_TRUE(access::set(section, field("wide"), "-2000000000") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_INT64(-2000000000ll, access::readSigned(section, field("wide")));
+    TEST_ASSERT_TRUE(Access::set(section, field("wide"), "-2000000000") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_INT64(-2000000000ll, Access::readSigned(section, field("wide")));
 }
 
 static void unsigned_rejects_negative_and_overflow() {
-    TEST_ASSERT_TRUE(access::set(section, field("port"), "14550") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_UINT64(14550u, access::readUnsigned(section, field("port")));
+    TEST_ASSERT_TRUE(Access::set(section, field("port"), "14550") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_UINT64(14550u, Access::readUnsigned(section, field("port")));
 
-    TEST_ASSERT_TRUE(access::set(section, field("port"), "65536") == access::SetStatus::OutOfRange);
-    TEST_ASSERT_TRUE(access::set(section, field("port"), "-1") == access::SetStatus::OutOfRange);
-    TEST_ASSERT_EQUAL_UINT64(14550u, access::readUnsigned(section, field("port")));
+    TEST_ASSERT_TRUE(Access::set(section, field("port"), "65536") == SetStatus::OutOfRange);
+    TEST_ASSERT_TRUE(Access::set(section, field("port"), "-1") == SetStatus::OutOfRange);
+    TEST_ASSERT_EQUAL_UINT64(14550u, Access::readUnsigned(section, field("port")));
 }
 
 static void real_honours_declared_bounds() {
-    TEST_ASSERT_TRUE(access::set(section, field("gain"), "2.5") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_DOUBLE(2.5, access::readReal(section, field("gain")));
+    TEST_ASSERT_TRUE(Access::set(section, field("gain"), "2.5") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_DOUBLE(2.5, Access::readReal(section, field("gain")));
 
-    TEST_ASSERT_TRUE(access::set(section, field("gain"), "11") == access::SetStatus::OutOfRange);
-    TEST_ASSERT_TRUE(access::set(section, field("gain"), "-0.5") == access::SetStatus::OutOfRange);
-    TEST_ASSERT_EQUAL_DOUBLE(2.5, access::readReal(section, field("gain")));
+    TEST_ASSERT_TRUE(Access::set(section, field("gain"), "11") == SetStatus::OutOfRange);
+    TEST_ASSERT_TRUE(Access::set(section, field("gain"), "-0.5") == SetStatus::OutOfRange);
+    TEST_ASSERT_EQUAL_DOUBLE(2.5, Access::readReal(section, field("gain")));
 }
 
 static void real_uses_field_width() {
     // A 64-bit field must be stored wide, not truncated through f32
-    TEST_ASSERT_TRUE(access::set(section, field("scale"), "0.25") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_DOUBLE(0.25, access::readReal(section, field("scale")));
+    TEST_ASSERT_TRUE(Access::set(section, field("scale"), "0.25") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_DOUBLE(0.25, Access::readReal(section, field("scale")));
     TEST_ASSERT_EQUAL_DOUBLE(0.25, sample.scale);
 }
 
 static void ipv4_round_trip() {
-    TEST_ASSERT_TRUE(access::set(section, field("ip"), "192.168.1.42") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_UINT32(0xC0A8012Au, access::readIpv4(section, field("ip")));
+    TEST_ASSERT_TRUE(Access::set(section, field("ip"), "192.168.1.42") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_UINT32(0xC0A8012Au, Access::readIpv4(section, field("ip")).value);
 
-    TEST_ASSERT_TRUE(access::set(section, field("ip"), "192.168.1.999") == access::SetStatus::Malformed);
-    TEST_ASSERT_EQUAL_UINT32(0xC0A8012Au, access::readIpv4(section, field("ip")));
+    TEST_ASSERT_TRUE(Access::set(section, field("ip"), "192.168.1.999") == SetStatus::Malformed);
+    TEST_ASSERT_EQUAL_UINT32(0xC0A8012Au, Access::readIpv4(section, field("ip")).value);
 }
 
 static void enumerated_round_trip() {
-    TEST_ASSERT_TRUE(access::set(section, field("mode"), "fast") == access::SetStatus::Ok);
-    TEST_ASSERT_EQUAL_UINT64(2u, access::readUnsigned(section, field("mode")));
-    TEST_ASSERT_TRUE(access::readOptionName(section, field("mode")) == kf::StringView{"fast"});
+    TEST_ASSERT_TRUE(Access::set(section, field("mode"), "fast") == SetStatus::Ok);
+    TEST_ASSERT_EQUAL_UINT64(2u, Access::readUnsigned(section, field("mode")));
+    TEST_ASSERT_TRUE(Access::readOptionName(section, field("mode")) == kf::StringView{"fast"});
 
-    TEST_ASSERT_TRUE(access::set(section, field("mode"), "turbo") == access::SetStatus::UnknownOption);
-    TEST_ASSERT_EQUAL_UINT64(2u, access::readUnsigned(section, field("mode")));
+    TEST_ASSERT_TRUE(Access::set(section, field("mode"), "turbo") == SetStatus::UnknownOption);
+    TEST_ASSERT_EQUAL_UINT64(2u, Access::readUnsigned(section, field("mode")));
 }
 
 static void text_respects_terminator_budget() {
-    TEST_ASSERT_TRUE(access::set(section, field("text"), "abc") == access::SetStatus::Ok);
-    TEST_ASSERT_TRUE(access::readText(section, field("text")) == kf::StringView{"abc"});
+    TEST_ASSERT_TRUE(Access::set(section, field("text"), "abc") == SetStatus::Ok);
+    TEST_ASSERT_TRUE(Access::readText(section, field("text")) == kf::StringView{"abc"});
 
     // 7 characters plus the terminator exactly fills an 8-byte field
-    TEST_ASSERT_TRUE(access::set(section, field("text"), "1234567") == access::SetStatus::Ok);
-    TEST_ASSERT_TRUE(access::readText(section, field("text")) == kf::StringView{"1234567"});
+    TEST_ASSERT_TRUE(Access::set(section, field("text"), "1234567") == SetStatus::Ok);
+    TEST_ASSERT_TRUE(Access::readText(section, field("text")) == kf::StringView{"1234567"});
 
-    TEST_ASSERT_TRUE(access::set(section, field("text"), "12345678") == access::SetStatus::TooLong);
-    TEST_ASSERT_TRUE(access::readText(section, field("text")) == kf::StringView{"1234567"});
+    TEST_ASSERT_TRUE(Access::set(section, field("text"), "12345678") == SetStatus::TooLong);
+    TEST_ASSERT_TRUE(Access::readText(section, field("text")) == kf::StringView{"1234567"});
 }
 
 static void text_strips_quotes_to_allow_empty() {
-    TEST_ASSERT_TRUE(access::set(section, field("text"), "\"xy\"") == access::SetStatus::Ok);
-    TEST_ASSERT_TRUE(access::readText(section, field("text")) == kf::StringView{"xy"});
+    TEST_ASSERT_TRUE(Access::set(section, field("text"), "\"xy\"") == SetStatus::Ok);
+    TEST_ASSERT_TRUE(Access::readText(section, field("text")) == kf::StringView{"xy"});
 
     // Quoting is the only way to express an empty value: the console tokenizer
     // discards empty lexemes before they reach here.
-    TEST_ASSERT_TRUE(access::set(section, field("text"), "\"\"") == access::SetStatus::Ok);
-    TEST_ASSERT_TRUE(access::readText(section, field("text")).empty());
+    TEST_ASSERT_TRUE(Access::set(section, field("text"), "\"\"") == SetStatus::Ok);
+    TEST_ASSERT_TRUE(Access::readText(section, field("text")).empty());
 
-    TEST_ASSERT_TRUE(access::set(section, field("text"), "''") == access::SetStatus::Ok);
-    TEST_ASSERT_TRUE(access::readText(section, field("text")).empty());
+    TEST_ASSERT_TRUE(Access::set(section, field("text"), "''") == SetStatus::Ok);
+    TEST_ASSERT_TRUE(Access::readText(section, field("text")).empty());
 }
 
 int main() {

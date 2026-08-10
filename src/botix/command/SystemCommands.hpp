@@ -7,76 +7,69 @@
 
 #include <kf/Arena.hpp>
 #include <kf/primitives.hpp>
+#include <kf/rtos/Task.hpp>
+
+#include <kf/mixin/NonCopyable.hpp>
 
 #include "botix/service/ConsoleService.hpp"
 #include "botix/service/NetworkService.hpp"
+#include "botix/service/NetworkState.hpp"
 
 namespace botix::command {
 
-/// @brief Register `help`, `info` and `reboot`
-/// @return false when the console ran out of command or argument capacity
-[[nodiscard]] inline bool registerSystemCommands(
-    service::ConsoleService &console,
-    kf::Arena &arena,
-    service::NetworkService &network) noexcept {
+/// @brief The `help`, `info` and `reboot` commands
+struct SystemCommands : kf::mixin::NonCopyable {
 
-    struct Context {
+    struct Dependencies {
         service::ConsoleService &console;
         service::NetworkService &network;
     };
 
-    static Context context{console, network};
+    explicit constexpr SystemCommands(Dependencies deps) noexcept :
+        _console{deps.console},
+        _network{deps.network} {}
 
-    // help
+    [[nodiscard]] bool registerIn(service::ConsoleService &console, kf::Arena &arena) noexcept {
+        if (console.addCommand(arena, "help", [this](auto const &call) { _console.printHelp(call.output); }).isNone()) {
+            return false;
+        }
 
-    {
-        auto maybe = console.addCommand(arena, "help", [](auto const &call) {
-            context.console.printHelp(call.output);
-        });
+        if (console.addCommand(arena, "info", [this](auto const &call) { info(call); }).isNone()) {
+            return false;
+        }
 
-        if (maybe.isNone()) { return false; }
+        return console.addCommand(arena, "reboot", [](auto const &call) { reboot(call.output); }).isSome();
     }
 
-    // info
+private:
+    using Output = service::ConsoleService::Channel::Output;
+    using Call = service::ConsoleService::Command::Context;
 
-    {
-        auto maybe = console.addCommand(arena, "info", [](auto const &call) {
-            call.output.print("uptime_ms: {}", call.timestamp);
-            call.output.print("free_heap: {}", static_cast<kf::u32>(ESP.getFreeHeap()));
+    /// @brief Time allowed for the output sink to drain before the reset lands
+    static constexpr kf::units::Milliseconds _reboot_grace_ms{100};
 
-            auto const state = context.network.state();
-            call.output.print("wifi: {}", service::NetworkService::stateName(state));
+    service::ConsoleService &_console;
+    service::NetworkService &_network;
 
-            if (state == service::NetworkService::State::Connected) {
-                auto const address = context.network.localAddress();
-                call.output.print(
-                    "ip: {}.{}.{}.{}",
-                    (address >> 24) & 0xff,
-                    (address >> 16) & 0xff,
-                    (address >> 8) & 0xff,
-                    address & 0xff);
-            }
-        });
+    void info(Call const &call) const noexcept {
+        call.output.print("uptime_ms: {}", call.timestamp);
+        call.output.print("free_heap: {}", static_cast<kf::u32>(ESP.getFreeHeap()));
 
-        if (maybe.isNone()) { return false; }
+        auto const state = _network.state();
+        call.output.print("wifi: {}", service::name(state));
+
+        if (state == service::NetworkState::Connected) {
+            call.output.print("ip: {}", _network.localAddress());
+        }
     }
 
-    // reboot
+    static void reboot(Output &output) noexcept {
+        output.print("rebooting");
+        output.flush();
 
-    {
-        auto maybe = console.addCommand(arena, "reboot", [](auto const &call) {
-            call.output.print("rebooting");
-            call.output.flush();
-
-            // Give the sink a moment to drain before the reset takes effect
-            delay(100);
-            ESP.restart();
-        });
-
-        if (maybe.isNone()) { return false; }
+        kf::rtos::Task::sleep(_reboot_grace_ms);
+        ESP.restart();
     }
-
-    return true;
-}
+};
 
 }// namespace botix::command

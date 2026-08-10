@@ -307,7 +307,7 @@ struct ConsoleService final :
             private:
                 friend struct Parsable<Integer>;
                 constexpr bool parseImpl(ParseContext const &context) noexcept {
-                    auto const maybe_value = parse::integer(context.lexeme);
+                    auto const maybe_value = Parse::integer(context.lexeme);
 
                     if (maybe_value.isNone()) {
                         context.channel_output.error("'{}' is not an integer", context.lexeme);
@@ -344,7 +344,7 @@ struct ConsoleService final :
             private:
                 friend struct Parsable<Real>;
                 constexpr bool parseImpl(ParseContext const &context) noexcept {
-                    auto const maybe_value = parse::real(context.lexeme);
+                    auto const maybe_value = Parse::real(context.lexeme);
 
                     if (maybe_value.isNone()) {
                         context.channel_output.error("'{}' is not a number", context.lexeme);

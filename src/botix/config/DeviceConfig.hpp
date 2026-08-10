@@ -33,4 +33,4 @@ private:
     }
 };
 
-}// namespace botix
+}// namespace botix::config
