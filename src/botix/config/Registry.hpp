@@ -162,6 +162,7 @@ private:
         BOTIX_FIELD(DeviceConfig, "mavlink.sysid_target", protocol_registry.mavlink.system_id_target, Kind::Unsigned, kf::u8),
         BOTIX_FIELD(DeviceConfig, "mavlink.compid_heartbeat", protocol_registry.mavlink.component_id_heartbeat, Kind::Unsigned, kf::u8),
         BOTIX_FIELD(DeviceConfig, "mavlink.compid_wheel", protocol_registry.mavlink.component_id_wheel_distance, Kind::Unsigned, kf::u8),
+        BOTIX_FIELD(DeviceConfig, "mavlink.compid_serial", protocol_registry.mavlink.component_id_serial_control, Kind::Unsigned, kf::u8),
 
         // mixer
         BOTIX_FIELD(DeviceConfig, "mixer.max_input_age_ms", mixer_service.max_control_input_age_ms, Kind::Unsigned, kf::usize),
