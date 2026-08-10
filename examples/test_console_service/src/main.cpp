@@ -4,6 +4,7 @@
 #include <kf/rtos/Task.hpp>
 
 #include "botix/service/ConsoleService.hpp"
+#include "botix/transport/Kind.hpp"
 
 void kf::main(kf::Init &init) {
     init.logger.debug("hello test");
@@ -32,10 +33,11 @@ void kf::main(kf::Init &init) {
     channel.echo = true;
 
     auto maybe_command = console_service.addCommand(init.arena, "cmd", [&init](botix::service::ConsoleService::Command::Context const &context) {
-        auto const str = context.arguments[0].string();
-        auto const flag = context.arguments[1].boolean();
+        auto const e = context.arguments[0].enumIndex();
+        auto const str = context.arguments[1].string();
+        auto const flag = context.arguments[2].boolean();
 
-        context.output.print("mode: '{}', flag={}", str, flag);
+        context.output.print("e: {}, mode: '{}', flag={}", e, str, flag);
     });
 
     if (maybe_command.isNone()) {
@@ -45,11 +47,18 @@ void kf::main(kf::Init &init) {
 
     auto &command = maybe_command.unwrap();
 
+    botix::service::ConsoleService::Command::Argument::EnumItem const transports[]{
+        {"espnow", botix::transport::Kind::Espnow},
+        {"wifi", botix::transport::Kind::Wifi},
+    };
+
     kf::StringView my_string_options[]{
         "wifi",
         "espnow",
         "auto",
     };
+
+    (void) command.addEnumArgument("transport", {.items{transports}});
 
     (void) command.addStringArgument(
         "my_string",

@@ -19,6 +19,7 @@
 #include <kf/units.hpp>
 
 #include <kf/mixin/Configured.hpp>
+#include <kf/mixin/Labeled.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 #include <kf/mixin/Resettable.hpp>
 
@@ -111,6 +112,7 @@ struct ConsoleService final :
         struct Argument {
 
             enum class Kind : kf::u8 {
+                Enum,
                 Boolean,
                 Integer,
                 Real,
@@ -120,14 +122,30 @@ struct ConsoleService final :
             struct ParseContext {
                 Channel::Output &channel_output;
                 kf::StringView lexeme;// not empty
+
+                template<typename T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items, auto item_name_provider) const noexcept -> kf::Option<T const &> {
+                    for (auto const &item: items) {
+                        if (item_name_provider(item) == lexeme) {
+                            return kf::someRef(item);
+                        }
+                    }
+
+                    channel_output.error("'{}' not allowed, use:", lexeme);
+                    for (auto const &item: items) {
+                        channel_output.error("\t'{}'", item_name_provider(item));
+                    }
+
+                    return kf::none;
+                }
             };
 
-            // TODO: use kf::mixin::Resettable
-            template<kf::trivial T> struct Parameters {
+            template<kf::trivial T> struct Parameters : kf::mixin::Resettable<Parameters<T>> {
                 T value{};
                 kf::Option<T> default_value;
 
-                constexpr void reset() noexcept {
+            private:
+                KF_IMPL_RESETTABLE(Parameters<T>);
+                constexpr void resetImpl() noexcept {
                     if (default_value.isSome()) {
                         value = default_value.unwrap();
                     }
@@ -146,11 +164,56 @@ struct ConsoleService final :
                     ParametersType{params} {}
             };
 
-            struct BooleanParameters {
-                Parameters<bool> params;
+            template<kf::trivial T> struct ValueItem : kf::mixin::Labeled {
+                using ValueType = T;
+
+                constexpr ValueItem(kf::StringView label, ValueType value) noexcept :
+                    kf::mixin::Labeled{label}, _value{value} {}
+
+                [[nodiscard]] constexpr auto value() const noexcept {
+                    return _value;
+                }
+
+            private:
+                ValueType _value;
             };
 
-            // TODO: Enum argument type
+            struct EnumItem : ValueItem<kf::usize> {
+
+                constexpr EnumItem(kf::StringView label, kf::enum_type auto value) noexcept :
+                    ValueItem<kf::usize>{label, static_cast<kf::usize>(value)} {
+                    static_assert(sizeof(value) <= sizeof(kf::usize));
+                }
+            };
+
+            struct EnumParameters {
+
+                Parameters<EnumItem::ValueType> params;
+                kf::Slice<EnumItem const> items;
+            };
+
+            struct Enum : Value<Enum, EnumParameters> {
+
+                using Value<Enum, EnumParameters>::Value;
+
+            private:
+                friend struct Parsable<Enum>;
+                constexpr bool parseImpl(ParseContext const &context) noexcept {
+                    auto const name_provider = [](auto const &item) noexcept { return item.label(); };
+
+                    if (auto maybe_item = context.parseEnumerated(items, name_provider); maybe_item.isSome()) {
+                        this->params.value = maybe_item.unwrap().value();
+                        return true;
+                    }
+                    return false;
+                }
+            };
+
+            using BooleanItem = ValueItem<bool>;
+
+            struct BooleanParameters {
+                Parameters<BooleanItem::ValueType> params;
+            };
 
             // TODO: make special case of Enum
             struct Boolean : Value<Boolean, BooleanParameters> {
@@ -160,17 +223,28 @@ struct ConsoleService final :
             private:
                 friend struct Parsable<Boolean>;
                 constexpr bool parseImpl(ParseContext const &context) noexcept {
-                    if (context.lexeme == "true") {
-                        this->params.value = true;
+
+                    BooleanItem const items[8]{
+                        {"true", true},
+                        {"false", false},
+
+                        {"t", true},
+                        {"f", false},
+
+                        {"yes", true},
+                        {"no", false},
+
+                        {"y", true},
+                        {"n", false},
+                    };
+
+                    auto const name_provider = [](auto const &item) noexcept { return item.label(); };
+
+                    if (auto maybe_item = context.parseEnumerated<BooleanItem>(items, name_provider); maybe_item.isSome()) {
+                        this->params.value = maybe_item.unwrap().value();
                         return true;
                     }
 
-                    if (context.lexeme == "false") {
-                        this->params.value = false;
-                        return true;
-                    }
-
-                    context.channel_output.error("allowed only: 'true' or 'false'");
                     return false;
                 }
             };
@@ -193,7 +267,7 @@ struct ConsoleService final :
                 }
             };
 
-            using RealParameters = NumberParameters<kf::i32>;
+            using RealParameters = NumberParameters<kf::f32>;
 
             struct Real : Value<Real, RealParameters> {
 
@@ -219,23 +293,14 @@ struct ConsoleService final :
                 friend struct Parsable<String>;
                 constexpr bool parseImpl(ParseContext const &context) noexcept {
                     if (not this->options.empty()) {
-                        bool match = false;
+                        auto const name_provider = [](auto s) { return s; };
 
-                        for (auto o: options) {
-                            if (o == context.lexeme) {
-                                match = true;
-                                break;
-                            }
+                        if (auto maybe_item = context.parseEnumerated<kf::StringView>(options, name_provider); maybe_item.isSome()) {
+                            this->params.value = maybe_item.unwrap();
+                            return true;
                         }
 
-                        if (not match) {
-                            context.channel_output.error("'{}' not an option. allowed only options: ", context.lexeme);
-                            for (auto o: options) {// TODO: kf append any seq where T has repr() will display
-                                context.channel_output.error("\t'{}'", o);
-                            }
-
-                            return false;
-                        }
+                        return false;
                     }
 
                     this->params.value = context.lexeme;
@@ -243,7 +308,32 @@ struct ConsoleService final :
                 }
             };
 
+            // construct
+
+            explicit constexpr Argument(kf::StringView name, EnumParameters params) noexcept :
+                _enum{params}, _name{name}, _kind{Kind::Enum} {}
+
+            explicit constexpr Argument(kf::StringView name, BooleanParameters params) noexcept :
+                _boolean{params}, _name{name}, _kind{Kind::Boolean} {}
+
+            explicit constexpr Argument(kf::StringView name, IntegerParameters params) noexcept :
+                _integer{params}, _name{name}, _kind{Kind::Integer} {}
+
+            explicit constexpr Argument(kf::StringView name, RealParameters params) noexcept :
+                _real{params}, _name{name}, _kind{Kind::Real} {}
+
+            explicit constexpr Argument(kf::StringView name, StringParameters params) noexcept :
+                _string{params}, _name{name}, _kind{Kind::String} {}
+
             // get
+
+            [[nodiscard]] constexpr auto enumIndex() const noexcept {
+                return _enum.params.value;
+            }
+
+            [[nodiscard]] constexpr auto enumName() const noexcept {
+                return _enum.items[enumIndex()].label();
+            }
 
             [[nodiscard]] constexpr auto boolean() const noexcept {
                 return _boolean.params.value;
@@ -263,8 +353,17 @@ struct ConsoleService final :
 
             // properties
 
+            [[nodiscard]] constexpr auto name() const noexcept {
+                return _name;
+            }
+
+            [[nodiscard]] constexpr auto kind() const noexcept {
+                return _kind;
+            }
+
             [[nodiscard]] constexpr bool hasDefault() const noexcept {
-                switch (kind) {
+                switch (_kind) {
+                    case Kind::Enum: return _enum.params.default_value.isSome();
                     case Kind::Boolean: return _boolean.params.default_value.isSome();
                     case Kind::Integer: return _integer.params.default_value.isSome();
                     case Kind::Real: return _real.params.default_value.isSome();
@@ -274,7 +373,8 @@ struct ConsoleService final :
             }
 
             [[nodiscard]] constexpr bool parse(ParseContext const &context) noexcept {
-                switch (kind) {
+                switch (_kind) {
+                    case Kind::Enum: return _enum.parse(context);
                     case Kind::Boolean: return _boolean.parse(context);
                     case Kind::Integer: return _integer.parse(context);
                     case Kind::Real: return _real.parse(context);
@@ -284,7 +384,8 @@ struct ConsoleService final :
             }
 
             void reset() noexcept {
-                switch (kind) {
+                switch (_kind) {
+                    case Kind::Enum: return _enum.params.reset();
                     case Kind::Boolean: _boolean.params.reset(); break;
                     case Kind::Integer: _integer.params.reset(); break;
                     case Kind::Real: _real.params.reset(); break;
@@ -292,15 +393,17 @@ struct ConsoleService final :
                 };
             }
 
+        private:
             union {
+                Enum _enum;
                 Boolean _boolean;
                 Integer _integer;
                 Real _real;
                 String _string;
             };
 
-            Kind kind;
-            kf::StringView name;
+            kf::StringView _name;
+            Kind _kind;
         };
 
         struct Context {
@@ -342,20 +445,24 @@ struct ConsoleService final :
         // TODO: check if non-default after default
         // TODO: check for name arg collision
 
+        [[nodiscard]] constexpr bool addEnumArgument(kf::StringView name, Argument::EnumParameters params) noexcept {
+            return _arguments.write(Argument{name, params});
+        }
+
         [[nodiscard]] constexpr bool addBooleanArgument(kf::StringView name, Argument::BooleanParameters params) noexcept {
-            return _arguments.write(Argument{._boolean{params}, .kind = Argument::Kind::Boolean, .name = name});
+            return _arguments.write(Argument{name, params});
         }
 
         [[nodiscard]] constexpr bool addIntegerArgument(kf::StringView name, Argument::IntegerParameters params) noexcept {
-            return _arguments.write(Argument{._integer{params}, .kind = Argument::Kind::Integer, .name = name});
+            return _arguments.write(Argument{name, params});
         }
 
         [[nodiscard]] constexpr bool addRealArgument(kf::StringView name, Argument::RealParameters params) noexcept {
-            return _arguments.write(Argument{._real{params}, .kind = Argument::Kind::Real, .name = name});
+            return _arguments.write(Argument{name, params});
         }
 
         [[nodiscard]] constexpr bool addStringArgument(kf::StringView name, Argument::StringParameters params) noexcept {
-            return _arguments.write(Argument{._string{params}, .kind = Argument::Kind::String, .name = name});
+            return _arguments.write(Argument{name, params});
         }
 
         // control
@@ -457,11 +564,11 @@ private:
         while (argument_index < argument_tokens.length()) {
             auto lexeme = argument_tokens[argument_index];
             auto &argument = command.arguments()[argument_index];
-            _logger.debug("{}: {}", argument.name, argument.hasDefault());
+            _logger.debug("{}: {}", argument.name(), argument.hasDefault());
 
             if (not argument.parse({.channel_output = channel.output, .lexeme = lexeme})) {
                 parse_failed = true;
-                channel.output.print("note: failed argument 'name': {}", argument.name);
+                channel.output.print("note: failed argument 'name': {}", argument.name());
             }
 
             argument_index += 1;
