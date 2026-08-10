@@ -57,6 +57,31 @@ DEFAULT_LOCAL_PORT = 14555
 DEFAULT_DISCOVER_TIMEOUT = 8.0
 
 
+def resolve(host: str) -> str:
+    """Resolve a host, falling back to an mDNS browse for a .local name.
+
+    The system resolver needs nss-mdns to answer .local, and it is flaky in
+    practice: the same name resolves one minute and fails the next. Browsing
+    ourselves keeps --host botix.local working regardless.
+    """
+    try:
+        return socket.gethostbyname(host)
+    except socket.gaierror:
+        if not host.endswith(".local"):
+            raise
+
+    print(f"{host} did not resolve, browsing mDNS instead", file=sys.stderr)
+
+    wanted = host.removesuffix(".local")
+
+    for name, address, _ in discover():
+        if name == wanted:
+            print(f"{host} -> {address}", file=sys.stderr)
+            return address
+
+    sys.exit(f"could not resolve {host}; pass --host <ip> instead")
+
+
 class _UdpWriter:
     """File-like sink so pymavlink's MAVLink object can emit datagrams."""
 
@@ -85,7 +110,7 @@ class Link:
         source_system: int,
         target_system: int,
     ) -> "Link":
-        address = (socket.gethostbyname(host), robot_port)
+        address = (resolve(host), robot_port)
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

@@ -30,6 +30,17 @@ struct MixerServiceConfig : kf::mixin::Resettable<MixerServiceConfig> {
         motor_left_sign,
         motor_right_sign;
 
+    /// @brief Per-motor output trim in per-mille, 1000 leaving the command untouched
+    /// @note Attenuation only, so a trim can never push a motor past its limit:
+    ///       balance a drivetrain by slowing the faster wheel, not by pushing the
+    ///       slower one. Identical motors still differ by a few percent in practice.
+    kf::u16
+        motor_left_scale,
+        motor_right_scale;
+
+    /// @brief Largest trim value, denoting an untouched command
+    static constexpr kf::u16 scale_unity{1000};
+
 private:
     KF_IMPL_RESETTABLE(MixerServiceConfig);
     constexpr void resetImpl() noexcept {
@@ -37,6 +48,8 @@ private:
         mode = Mode::Tank;
         motor_left_sign = +1;
         motor_right_sign = +1;
+        motor_left_scale = scale_unity;
+        motor_right_scale = scale_unity;
     }
 };
 
@@ -85,6 +98,11 @@ private:
     kf::units::Milliseconds _last_age{};
     Output _output{};
 
+    /// @brief Apply a per-mille trim, widening first so the product cannot overflow
+    [[nodiscard]] static constexpr Output::ValueType trimmed(kf::i32 value, kf::u16 per_mille) noexcept {
+        return static_cast<Output::ValueType>((value * static_cast<kf::i32>(per_mille)) / Config::scale_unity);
+    }
+
     BOTIX_IMPL_SERVICE(Self);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         auto const age = _control_input.age(now);
@@ -116,8 +134,13 @@ private:
                     break;
             }
 
-            _output.motor_left_set *= this->config().motor_left_sign;
-            _output.motor_right_set *= this->config().motor_right_sign;
+            _output.motor_left_set = trimmed(
+                _output.motor_left_set * this->config().motor_left_sign,
+                this->config().motor_left_scale);
+
+            _output.motor_right_set = trimmed(
+                _output.motor_right_set * this->config().motor_right_sign,
+                this->config().motor_right_scale);
         }
     }
 };

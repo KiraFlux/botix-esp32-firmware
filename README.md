@@ -146,6 +146,26 @@ The tank mixer takes drive from the MAVLink `z` axis and turn from `r`; `x` and
 `y` reach the arm and claw servos. Sending throttle on `x` moves the arm and
 leaves the wheels still.
 
+## Straightening the drivetrain
+
+Two nominally identical motors differ by a few percent, so the robot curves
+under a straight command. `mixer.left_scale` and `mixer.right_scale` trim each
+motor in per-mille, 1000 leaving the command untouched. They only attenuate, so
+balance by slowing the faster wheel rather than pushing the slower one.
+
+Measure with the odometry rather than by eye. Drive straight for a couple of
+seconds, read `telemetry` before and after, and compare the magnitudes — the
+two encoders count in opposite directions on a mirrored chassis, so compare
+absolute values:
+
+```
+config set device.mixer.right_scale 911
+config save
+```
+
+On the robot measured here the right wheel ran 9.8% fast over repeated runs,
+giving 911.
+
 ## Current State
 
 <blockquote>
