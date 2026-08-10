@@ -97,15 +97,17 @@ void kf::main(kf::Init &init) {
     });
 
     system_transport.onReceiveForeign([&init](auto const &context) -> void {
-        init.logger.debug("Found device");
-
+        // Traffic from anything that is not the peer is ordinary background noise
+        // on a shared network. Logging it per packet floods the UART, garbles the
+        // console sharing that line, and buries whatever the real problem is.
         if (system_transport.link.connected()) {
-            init.logger.error("connect denied (already connected)");
             return;
         }
 
+        init.logger.debug("Found device: {}", context.address);
+
         if (not system_transport.link.connect(context.address)) {
-            init.logger.error("system_transport.link.connect failed");
+            init.logger.error("connect failed: {}", context.address);
         }
     });
 

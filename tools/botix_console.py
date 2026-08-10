@@ -52,6 +52,10 @@ MDNS_SERVICE_TYPE = "_botix._udp.local."
 DEFAULT_ROBOT_PORT = 14550
 DEFAULT_LOCAL_PORT = 14555
 
+# The ESP32 responder answers a service browse only after a few query rounds;
+# measured at roughly five seconds, so anything shorter reports a false negative.
+DEFAULT_DISCOVER_TIMEOUT = 8.0
+
 
 class _UdpWriter:
     """File-like sink so pymavlink's MAVLink object can emit datagrams."""
@@ -173,7 +177,7 @@ def drain(link: Link, timeout: float) -> str:
     return "".join(collected)
 
 
-def discover(timeout: float) -> list[tuple[str, str, int]]:
+def discover(timeout: float = DEFAULT_DISCOVER_TIMEOUT) -> list[tuple[str, str, int]]:
     """Browse mDNS for Botix robots. Returns (name, address, port) triples."""
     try:
         from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
@@ -200,10 +204,16 @@ def discover(timeout: float) -> list[tuple[str, str, int]]:
         def remove_service(self, zc, type_, name):
             pass
 
+    print(f"browsing {MDNS_SERVICE_TYPE} for {timeout:.0f}s...", file=sys.stderr)
+
     zeroconf = Zeroconf()
     try:
         ServiceBrowser(zeroconf, MDNS_SERVICE_TYPE, _Listener())
-        time.sleep(timeout)
+
+        # Stop as soon as something answers rather than always waiting it out
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline and not found:
+            time.sleep(0.2)
     finally:
         zeroconf.close()
 
@@ -321,6 +331,12 @@ def main() -> int:
     parser.add_argument("--target-system", type=int, default=1, help="MAVLink system id of the robot (device.mavlink.sysid_self)")
     parser.add_argument("--timeout", type=float, default=2.0, help="reply timeout for cmd mode")
     parser.add_argument("--discover", action="store_true", help="browse mDNS for robots and exit")
+    parser.add_argument(
+        "--discover-timeout",
+        type=float,
+        default=DEFAULT_DISCOVER_TIMEOUT,
+        help="how long to browse before giving up",
+    )
     parser.add_argument("--speed", type=int, default=500, help="teleop magnitude, 0..1000")
 
     subparsers = parser.add_subparsers(dest="mode")
@@ -333,9 +349,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.discover:
-        robots = discover(2.0)
+        robots = discover(args.discover_timeout)
         if not robots:
-            print("no robots found")
+            print("no robots found; the robot answers a browse only after a few seconds, try --discover-timeout 15")
             return 1
 
         for name, address, port in robots:
