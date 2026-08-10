@@ -25,8 +25,13 @@ struct IncomingTelemetry :
             return _value;
         }
 
+        /// @brief Time since the last update, saturating at zero
+        /// @note An entry can be stamped later than the caller's `now`: a polled
+        ///       transport receives inside the same iteration whose timestamp was
+        ///       taken beforehand. Subtracting unsigned would wrap to ~49 days and
+        ///       make the freshest possible input look permanently stale.
         [[nodiscard]] constexpr kf::units::Milliseconds age(kf::units::Milliseconds now) const noexcept {
-            return now - _last_update;
+            return (now > _last_update) ? (now - _last_update) : 0;
         }
 
         void update(T const &new_value, kf::units::Milliseconds now) noexcept {

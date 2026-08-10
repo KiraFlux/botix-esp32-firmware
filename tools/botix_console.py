@@ -360,13 +360,23 @@ def main() -> int:
         default=DEFAULT_DISCOVER_TIMEOUT,
         help="how long to browse before giving up",
     )
-    parser.add_argument("--speed", type=int, default=500, help="teleop magnitude, 0..1000")
-
     subparsers = parser.add_subparsers(dest="mode")
+
     subparsers.add_parser("shell")
+
     cmd_parser = subparsers.add_parser("cmd")
     cmd_parser.add_argument("command", help="console command to run")
-    subparsers.add_parser("teleop")
+
+    teleop_parser = subparsers.add_parser("teleop")
+    teleop_parser.add_argument("--speed", type=int, default=500, help="drive magnitude, 0..1000")
+    teleop_parser.add_argument("--rate", type=float, default=20.0, help="command rate in Hz")
+    teleop_parser.add_argument(
+        "--hold",
+        type=float,
+        default=1.0,
+        help="seconds a command survives without a keypress before it is cancelled",
+    )
+
     subparsers.add_parser("watch")
 
     args = parser.parse_args()
@@ -400,7 +410,7 @@ def main() -> int:
         if mode == "cmd":
             return run_cmd(link, args.command, args.timeout)
         if mode == "teleop":
-            return run_teleop(link, args.speed, rate_hz=20.0)
+            return run_teleop(link, args.speed, rate_hz=args.rate, hold_s=args.hold)
         if mode == "watch":
             return run_watch(link)
 
