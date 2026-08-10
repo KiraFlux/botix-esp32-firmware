@@ -23,6 +23,8 @@
 #include <kf/mixin/NonCopyable.hpp>
 #include <kf/mixin/Resettable.hpp>
 
+#include "botix/Parse.hpp"
+
 #include "botix/service/Service.hpp"
 
 namespace botix::internal {
@@ -43,9 +45,11 @@ private:
     KF_IMPL_RESETTABLE(ConsoleServiceConfig);
     constexpr void resetImpl() noexcept {
         max_channels = 0x08;
+        max_commands = 0x10;
+        command_max_arguments = 0x08;
         channel_input_queue_length = 0x02'00;
         channel_input_line_length = 0x00'80;
-        channel_output_line_length = 0x00'80;
+        channel_output_line_length = 0x01'00;
     }
 };
 
@@ -76,8 +80,16 @@ struct ConsoleService final :
 
         struct Output : kf::mixin::NonCopyable {
 
+            /// @brief Receives one complete output line, terminator included
+            using Sink = kf::Function<void(kf::StringView)>;
+
             explicit constexpr Output(kf::Slice<char> buffer) noexcept :
                 _line{buffer} {}
+
+            /// @brief Set where completed lines are delivered
+            void sink(auto &&f) noexcept {
+                _sink = kf::some(Sink{std::forward<decltype(f)>(f)});
+            }
 
             template<typename... Args> void error(kf::internal::FormatString<Args...> fmt, Args const &...args) noexcept {
                 _line.append("error: ");
@@ -87,9 +99,26 @@ struct ConsoleService final :
             template<typename... Args> void print(kf::internal::FormatString<Args...> fmt, Args const &...args) noexcept {
                 _line.format(fmt, args...);
                 (void) _line.write('\n');
+                flush();
             }
 
+            /// @brief Hand the buffered line to the sink and clear it
+            /// @note Flushing per line bounds the buffer to a single line
+            void flush() noexcept {
+                if (_line.empty()) {
+                    return;
+                }
+
+                if (_sink.isSome()) {
+                    _sink.unwrap()(_line.view());
+                }
+
+                _line.reset();
+            }
+
+        private:
             kf::String _line;
+            kf::Option<Sink> _sink{kf::none};
         };
 
         void feed(kf::StringView input) noexcept {
@@ -252,6 +281,21 @@ struct ConsoleService final :
             template<kf::arithmetic T> struct NumberParameters {
                 Parameters<T> params;
                 kf::Option<T> min_value, max_value;
+
+                /// @brief Reject a parsed value that falls outside the configured bounds
+                [[nodiscard]] constexpr bool inBounds(ParseContext const &context, T value) const noexcept {
+                    if (min_value.isSome() and value < min_value.unwrap()) {
+                        context.channel_output.error("'{}' below minimum {}", context.lexeme, min_value.unwrap());
+                        return false;
+                    }
+
+                    if (max_value.isSome() and value > max_value.unwrap()) {
+                        context.channel_output.error("'{}' above maximum {}", context.lexeme, max_value.unwrap());
+                        return false;
+                    }
+
+                    return true;
+                }
             };
 
             using IntegerParameters = NumberParameters<kf::i32>;
@@ -263,7 +307,31 @@ struct ConsoleService final :
             private:
                 friend struct Parsable<Integer>;
                 constexpr bool parseImpl(ParseContext const &context) noexcept {
-                    return false;// TODO: impl
+                    auto const maybe_value = parse::integer(context.lexeme);
+
+                    if (maybe_value.isNone()) {
+                        context.channel_output.error("'{}' is not an integer", context.lexeme);
+                        return false;
+                    }
+
+                    auto const wide = maybe_value.unwrap();
+
+                    constexpr kf::i64 low{-2147483647ll - 1};
+                    constexpr kf::i64 high{2147483647ll};
+
+                    if (wide < low or wide > high) {
+                        context.channel_output.error("'{}' does not fit in 32 bits", context.lexeme);
+                        return false;
+                    }
+
+                    auto const value = static_cast<kf::i32>(wide);
+
+                    if (not this->inBounds(context, value)) {
+                        return false;
+                    }
+
+                    this->params.value = value;
+                    return true;
                 }
             };
 
@@ -276,7 +344,21 @@ struct ConsoleService final :
             private:
                 friend struct Parsable<Real>;
                 constexpr bool parseImpl(ParseContext const &context) noexcept {
-                    return false;// TODO: impl
+                    auto const maybe_value = parse::real(context.lexeme);
+
+                    if (maybe_value.isNone()) {
+                        context.channel_output.error("'{}' is not a number", context.lexeme);
+                        return false;
+                    }
+
+                    auto const value = maybe_value.unwrap();
+
+                    if (not this->inBounds(context, value)) {
+                        return false;
+                    }
+
+                    this->params.value = value;
+                    return true;
                 }
             };
 
@@ -359,6 +441,17 @@ struct ConsoleService final :
 
             [[nodiscard]] constexpr auto kind() const noexcept {
                 return _kind;
+            }
+
+            [[nodiscard]] static constexpr kf::StringView kindName(Kind kind) noexcept {
+                switch (kind) {
+                    case Kind::Enum: return "enum";
+                    case Kind::Boolean: return "bool";
+                    case Kind::Integer: return "int";
+                    case Kind::Real: return "real";
+                    case Kind::String: return "str";
+                    default: return "?";
+                }
             }
 
             [[nodiscard]] constexpr bool hasDefault() const noexcept {
@@ -482,7 +575,7 @@ struct ConsoleService final :
 
     explicit constexpr ConsoleService(Config const &config, kf::Arena &arena) noexcept :
         kf::mixin::Configured<Config>{config},
-        _channels{arena.allocate<Channel>(config.max_channels)},
+        _channels{internal::allocateNonTrivial<Channel>(arena, config.max_channels)},
         _commands{internal::allocateNonTrivial<Command>(arena, config.max_commands)} {}
 
     [[nodiscard]] auto addChannel(kf::Arena &arena) noexcept -> kf::Option<Channel &> {
@@ -522,6 +615,23 @@ struct ConsoleService final :
         });
 
         return _commands.top();
+    }
+
+    /// @brief List every registered command with its argument signature
+    void printHelp(Channel::Output &output) noexcept {
+        output.print("commands:");
+
+        for (auto const &command: _commands) {
+            output.print("  {}", command.name());
+
+            for (auto const &argument: command.arguments()) {
+                output.print(
+                    "      {} : {}{}",
+                    argument.name(),
+                    Command::Argument::kindName(argument.kind()),
+                    argument.hasDefault() ? " (optional)" : "");
+            }
+        }
     }
 
 private:
@@ -564,7 +674,6 @@ private:
         while (argument_index < argument_tokens.length()) {
             auto lexeme = argument_tokens[argument_index];
             auto &argument = command.arguments()[argument_index];
-            _logger.debug("{}: {}", argument.name(), argument.hasDefault());
 
             if (not argument.parse({.channel_output = channel.output, .lexeme = lexeme})) {
                 parse_failed = true;
@@ -610,15 +719,17 @@ private:
                 switch (c) {
                     case '\b':
                     case '\x7F':
-                        if (channel.input_line.read().isNone()) {
-                            _logger.error("input buffer is empty");
-                        }
+                        // Backspace on an empty line is ordinary user input, not an error
+                        (void) channel.input_line.read();
                         break;
 
                     case '\t':
-                        _logger.debug("tab");
+                        // Completion is not implemented; ignore rather than log per keystroke
                         break;
 
+                    // Terminals end a line with LF, CR or CRLF. An empty line is a
+                    // no-op, so accepting both terminators handles CRLF safely.
+                    case '\r':
                     case '\n':
                         onInputLine(now, channel);
                         channel.input_line.reset();

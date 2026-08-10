@@ -6,12 +6,14 @@
 #include <kf/rtos/Task.hpp>
 
 #include "botix/OutgoingTelemetry.hpp"
-#include "botix/protocol/Kind.hpp"
+#include "botix/config/Registry.hpp"
 #include "botix/transport/Address.hpp"
 
 #include "botix/system/BehaviorSystem.hpp"
 #include "botix/system/ConfigSystem.hpp"
+#include "botix/system/ConsoleSystem.hpp"
 #include "botix/system/HardwareSystem.hpp"
+#include "botix/system/NetworkSystem.hpp"
 #include "botix/system/ProtocolSystem.hpp"
 #include "botix/system/TelemetrySystem.hpp"
 #include "botix/system/TransportSystem.hpp"
@@ -31,8 +33,13 @@ void kf::main(kf::Init &init) {
         .config = system_config.device,
     }};
 
+    static botix::system::NetworkSystem system_network{{
+        .config = system_config.user.network,
+        .service_port = system_config.user.transport_registry.wifi_udp.local_port,
+    }};
+
     static botix::system::TransportSystem system_transport{{
-        // TODO: check for deps
+        .config = system_config.user.transport_registry,
     }};
 
     static botix::system::ProtocolSystem system_protocol{{
@@ -53,9 +60,18 @@ void kf::main(kf::Init &init) {
 
     system_config.init();
 
+    static botix::config::Registry config_registry{
+        system_config.device,
+        system_config.user,
+    };
+
     // hardware
 
     system_hardware.init();
+
+    // network: the station must exist before the UDP transport can bind
+
+    system_network.init();
 
     // telemetry
 
@@ -107,6 +123,50 @@ void kf::main(kf::Init &init) {
         init.logger.debug("mavlink (fallback): msg id: {}, seq: {}", message.msgid, message.seq);
     });
 
+    // console
+
+    static botix::service::ConsoleService::Config console_config{};
+    console_config.reset();
+
+    static botix::system::ConsoleSystem system_console{{
+        .config = console_config,
+        .arena = init.arena,
+        .registry = config_registry,
+        .device_config_service = system_config.device_service,
+        .user_config_service = system_config.user_service,
+        .network = system_network.service,
+        .transport = system_transport,
+        .protocol = system_protocol,
+    }};
+
+    if (not system_console.init()) {
+        init.logger.error("Console init failed");
+    }
+
+    // Serial console: bytes come from the UART, output goes straight back to it
+    auto maybe_serial_channel = system_console.addChannel([&init](kf::StringView line) -> void {
+        (void) init.io.writeBuffer({
+            reinterpret_cast<kf::u8 const *>(line.data()),
+            line.length(),
+        });
+        init.io.flush();
+    });
+
+    // Remote console: bytes arrive over MAVLink SERIAL_CONTROL and replies go back the same way
+    auto maybe_mavlink_channel = system_console.addChannel([](kf::StringView line) -> void {
+        (void) system_protocol.sendSerialControl(line);
+    });
+
+    if (maybe_mavlink_channel.isSome()) {
+        static auto &mavlink_channel = maybe_mavlink_channel.unwrap();
+
+        system_protocol.onSerialControl([](kf::StringView text) -> void {
+            mavlink_channel.feed(text);
+        });
+    } else {
+        init.logger.error("MAVLink console channel unavailable");
+    }
+
     // behavior
 
     system_behavior.init();
@@ -115,32 +175,7 @@ void kf::main(kf::Init &init) {
 
     // loop
 
-    // TODO: CLI system
-    auto const on_input_char = [&init](char c) -> void {
-        switch (c) {
-            case 'o': {
-                init.logger.debug(
-                    "Encoders: \tL: {} \t R: {}",
-                    system_telemetry.outgoing.wheel_distance.value().left_mm,
-                    system_telemetry.outgoing.wheel_distance.value().right_mm);
-                return;
-            }
-
-            case 'r': {
-                system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Raw));
-                system_config.user.init_protocol_kind = botix::protocol::Kind::Raw;
-                init.logger.debug("protocol: Raw");
-                return;
-            }
-
-            case 'm': {
-                system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Mavlink));
-                system_config.user.init_protocol_kind = botix::protocol::Kind::Mavlink;
-                init.logger.debug("protocol: Mavlink");
-                return;
-            }
-        }
-    };
+    auto serial_read_buffer = init.arena.allocate(64);
 
     while (true) {
         constexpr auto loop_period{1000 / 100};
@@ -148,20 +183,23 @@ void kf::main(kf::Init &init) {
         auto const now = rtos::Clock::now();
 
         system_telemetry.poll(now);
+        system_network.poll(now);
         system_transport.poll(now);
         system_protocol.poll(now);
         system_behavior.poll(now);
         system_config.poll(now);
         system_hardware.poll(now);
 
-        // TODO: CLI poll
-        {
-            while (init.io.availableForRead() > 0) {
-                if (auto const read = init.io.readPacket<char>(); read.isOk()) {
-                    on_input_char(read.ok());
-                }
+        if (maybe_serial_channel.isSome() and init.io.availableForRead() > 0) {
+            if (auto const read = init.io.readBuffer(serial_read_buffer); read.isOk()) {
+                maybe_serial_channel.unwrap().feed({
+                    reinterpret_cast<char const *>(read.ok().data()),
+                    read.ok().length(),
+                });
             }
         }
+
+        system_console.poll(now);
 
         rtos::Task::sleep(loop_period);
     }

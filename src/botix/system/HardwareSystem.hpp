@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <WiFi.h>
-
 #include <kf/units.hpp>
 
 #include "botix/Periphery.hpp"
@@ -31,11 +29,6 @@ private:
     void initImpl() noexcept {
         if (not periphery.init()) {
             // init.logger.error("Periphery init failed");
-            return;
-        }
-
-        if (not WiFi.mode(WIFI_MODE_STA)) {
-            // init.logger.error("WiFi mode failed");
             return;
         }
     }

@@ -32,6 +32,14 @@ void kf::main(kf::Init &init) {
     auto &channel = maybe_channel.unwrap();
     channel.echo = true;
 
+    channel.output.sink([&init](kf::StringView line) {
+        (void) init.io.writeBuffer({
+            reinterpret_cast<kf::u8 const *>(line.data()),
+            line.length(),
+        });
+        init.io.flush();
+    });
+
     auto maybe_command = console_service.addCommand(init.arena, "cmd", [&init](botix::service::ConsoleService::Command::Context const &context) {
         auto const e = context.arguments[0].enumIndex();
         auto const str = context.arguments[1].string();
@@ -90,11 +98,6 @@ void kf::main(kf::Init &init) {
         }
 
         console_service.poll(now);
-
-        if (not channel.output._line.empty()) {
-            init.logger.debug("output: {}", channel.output._line);
-            channel.output._line.reset();
-        }
 
         rtos::Task::sleep(1);
     }

@@ -34,6 +34,10 @@ protected:
 public:
     // properties
 
+    [[nodiscard]] constexpr Kind kind() const noexcept {
+        return _kind;
+    }
+
     [[nodiscard]] constexpr bool connected() const noexcept {
         return _active_connection_address.isSome();
     }

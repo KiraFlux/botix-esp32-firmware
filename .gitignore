@@ -4,4 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 
+compile_commands.json
+__pycache__/
+
 snapshot.txt

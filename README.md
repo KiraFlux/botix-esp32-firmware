@@ -4,7 +4,7 @@
 
 Modular ESP32 firmware for the [**Botix** open‑source mobile robot platform](https://github.com/KiraFlux/Botix.git)
 
-Currently used for hardware bring‑up and basic remote control tests; the final target is a transparent **WiFi (TCP/UDP) bridge** that exposes the robot's low‑level capabilities to a higher‑level controller (ROS 2 node, PC application, etc.).
+Exposes the robot's low‑level capabilities to a higher‑level controller (ROS 2 node, PC application, etc.) over **ESP‑NOW** or a **WiFi UDP** link, with a command console reachable over both the serial line and MAVLink.
 
 ---
 
@@ -26,21 +26,128 @@ A [`makefile`](./makefile) wraps common PlatformIO commands for convenience.
 | `make upload`  | `make u` | `pio run -t upload`                 | Compile and upload firmware to the ESP32 |
 | `make monitor` | `make m` | `pio device monitor --no-reconnect` | Open serial monitor (no auto-reconnect)  |
 
+## Tests
+
+Host tests cover the platform-independent logic — lexeme parsing and
+offset-based configuration access:
+
+```
+pio test -e native
+```
+
+---
+
+# Console
+
+The firmware exposes a command console. Every channel shares one command
+registry, so a command behaves identically over the serial line and over the
+air. Two channels are opened at boot:
+
+- **serial** — the UART, at the usual `115200` baud
+- **mavlink** — MAVLink `SERIAL_CONTROL` (`device = SERIAL_CONTROL_DEV_SHELL`),
+  which makes the same console reachable from a host over WiFi
+
+## Commands
+
+| Command                        | Description                                                |
+| :----------------------------- | :--------------------------------------------------------- |
+| `help`                         | List commands with their argument signatures                |
+| `info`                         | Uptime, free heap, WiFi state and address                   |
+| `reboot`                       | Restart the device                                          |
+| `config list [prefix]`         | Show configuration fields, filtered by section or path      |
+| `config get <path>`            | Show one field                                              |
+| `config set <path> <value>`    | Change one field                                            |
+| `config save`                  | Persist both configs to NVS now                             |
+| `config reset-device`          | Restore device defaults                                     |
+| `config reset-user`            | Restore user defaults                                       |
+| `transport status`             | Active transport, connection state and peer                 |
+| `transport use <espnow\|wifi>` | Switch the active transport for this session                |
+| `transport connect`            | Connect the WiFi transport to the configured remote         |
+| `transport disconnect`         | Drop the current connection                                 |
+| `protocol <raw\|mavlink>`      | Switch the active protocol for this session                 |
+
+`transport use` and `protocol` affect the running session only. Set
+`user.boot.transport` / `user.boot.protocol` to change what is selected at boot.
+
+## Configuration
+
+Every persisted field is addressable by a `section.path` name through the
+config registry. `device` holds hardware and protocol tuning, `user` holds
+deployment settings. Values are written immediately but only reach NVS on the
+sync timer or on `config save`.
+
+Bringing a robot onto a network:
+
+```
+config set user.wifi.ssid MyNetwork
+config set user.wifi.password MyPassword
+config set user.wifi.hostname botix
+config set user.wifi.enabled true
+config set user.udp.remote_ip 192.168.1.10
+config set user.boot.transport wifi
+config save
+reboot
+```
+
+The robot then joins the network, publishes itself over mDNS as
+`<hostname>.local` advertising `_botix._udp`, and sends telemetry to
+`user.udp.remote_ip:user.udp.remote_port`.
+
+<blockquote>
+
+### Notes and limitations
+
+- **The console is not authenticated.** Anyone able to reach the UDP port can
+  read and change configuration, including WiFi credentials. Secret fields are
+  masked when displayed, which is a display convenience and not a control. Use
+  it on trusted networks only.
+- **Values cannot contain spaces.** The console splits input on whitespace, so
+  an SSID or password with a space cannot be set this way. Surrounding quotes
+  are stripped from text values, which is also the only way to write an empty
+  one: `config set user.wifi.password ""`.
+- **ESP-NOW and WiFi cannot both be relied on.** Associating with an access
+  point changes the radio channel, which breaks an ESP-NOW peer parked on a
+  different one. Pick one transport per deployment.
+- The remote endpoint is taken from configuration rather than learned from
+  inbound traffic, so the host address must be set before telemetry flows.
+
+</blockquote>
+
+---
+
+# Host tooling
+
+[`tools/botix_console.py`](./tools/botix_console.py) drives the robot over
+MAVLink from a PC.
+
+```
+pip install -r tools/requirements.txt
+
+./tools/botix_console.py --discover                        # find robots via mDNS
+./tools/botix_console.py --host botix.local shell          # interactive console
+./tools/botix_console.py --host botix.local cmd "info"     # single command
+./tools/botix_console.py --host botix.local teleop         # WASD driving
+./tools/botix_console.py --host botix.local watch          # print inbound messages
+```
+
+The tool binds `user.udp.remote_port` locally, because that is where the robot
+sends replies and telemetry; it must match the robot's configuration.
+
 ## Current State
 
 <blockquote>
 
-**Temporary test mode** – the robot is controlled via **ESP‑NOW** using an [ESP32 Dual Joystick Controller (DJC)](https://github.com/KiraFlux/ESP32-DJC).  
-This is only intended for hardware validation and will be replaced by a permanent WiFi (UDP/TCP) command & telemetry interface.
+ESP‑NOW control via an [ESP32 Dual Joystick Controller (DJC)](https://github.com/KiraFlux/ESP32-DJC)
+still works and remains the default at boot. The WiFi UDP path is in place
+alongside it and is selected with `user.boot.transport`.
 
 </blockquote>
 
 ## Planned Features
 
-- WiFi UDP/TCP bridge for ROS 2 or other high‑level controllers
+- WiFi TCP bridge for ROS 2 or other high‑level controllers
 - High‑rate odometry telemetry (encoder deltas)
 - On‑board voltage monitoring
-- Persistent configuration storage (NVS)
 - Sleep / deep‑sleep for power saving
 - Time‑stamped sensor data
 
@@ -58,7 +165,7 @@ This is only intended for hardware validation and will be replaced by a permanen
 | **Power**  | Step‑down converter    | Mini 560 Pro (5 V output) |   1   | Powers ESP32                              |
 |            | Step‑down converter    | LM2596 (7‑9 V output)     |   1   | Powers motor drivers                      |
 |            | Battery                | 2S Li‑ion (7.4 V)         |   1   | Or any battery capable of delivering ≥2 A |
-| **Comm**   | WiFi                   | 2.4 GHz IEEE 802.11 b/g/n |   –   | Used for future UDP/TCP bridge            |
+| **Comm**   | WiFi                   | 2.4 GHz IEEE 802.11 b/g/n |   –   | ESP‑NOW and the UDP bridge                |
 
 ## Pin Configuration
 
