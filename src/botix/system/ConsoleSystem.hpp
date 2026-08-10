@@ -11,8 +11,11 @@
 #include <kf/Option.hpp>
 #include <kf/units.hpp>
 
+#include "botix/IncomingTelemetry.hpp"
+#include "botix/OutgoingTelemetry.hpp"
 #include "botix/command/ConfigCommands.hpp"
 #include "botix/command/SystemCommands.hpp"
+#include "botix/command/TelemetryCommands.hpp"
 #include "botix/command/TransportCommands.hpp"
 #include "botix/config/Registry.hpp"
 #include "botix/service/ConfigService.hpp"
@@ -41,6 +44,10 @@ struct ConsoleSystem : System<ConsoleSystem, bool()> {
         service::NetworkService &network;
         TransportSystem &transport;
         ProtocolSystem &protocol;
+        IncomingTelemetry &incoming_telemetry;
+        OutgoingTelemetry &outgoing_telemetry;
+        /// @brief Age past which the mixer discards control input
+        kf::usize const &max_control_input_age_ms;
     };
 
     explicit ConsoleSystem(Dependencies deps) noexcept :
@@ -58,6 +65,11 @@ struct ConsoleSystem : System<ConsoleSystem, bool()> {
             .registry = deps.registry,
             .device_service = deps.device_config_service,
             .user_service = deps.user_config_service,
+        }},
+        _telemetry_commands{{
+            .incoming = deps.incoming_telemetry,
+            .outgoing = deps.outgoing_telemetry,
+            .max_control_input_age_ms = deps.max_control_input_age_ms,
         }} {}
 
     /// @brief Open a channel delivering completed output lines to `sink`
@@ -85,6 +97,7 @@ private:
     command::SystemCommands _system_commands;
     command::TransportCommands _transport_commands;
     command::ConfigCommands _config_commands;
+    command::TelemetryCommands _telemetry_commands;
 
     BOTIX_IMPL_SYSTEM(ConsoleSystem, bool());
 
@@ -101,6 +114,11 @@ private:
 
         if (not _config_commands.registerIn(service, _arena)) {
             _logger.error("config commands registration failed");
+            return false;
+        }
+
+        if (not _telemetry_commands.registerIn(service, _arena)) {
+            _logger.error("telemetry commands registration failed");
             return false;
         }
 

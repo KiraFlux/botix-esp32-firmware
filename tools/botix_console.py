@@ -151,7 +151,18 @@ class Link:
             )
 
     def send_manual_control(self, x: int, y: int, z: int, r: int) -> None:
+        """Send one control frame.
+
+        The robot's tank mixer reads z as drive and r as turn; x and y go to the
+        arm and claw servos. Putting throttle in x moves the arm, not the wheels.
+        """
         self.mav.manual_control_send(self.target_system, x, y, z, r, 0)
+
+    def send_drive(self, drive: int, turn: int) -> None:
+        self.send_manual_control(0, 0, drive, turn)
+
+    def send_stop(self) -> None:
+        self.send_manual_control(0, 0, 0, 0)
 
 
 def console_text(message: object) -> str | None:
@@ -259,48 +270,60 @@ def run_cmd(link: Link, command: str, timeout: float) -> int:
     return 0
 
 
-def run_teleop(link: Link, speed: int, rate_hz: float) -> int:
+def run_teleop(link: Link, speed: int, rate_hz: float, hold_s: float = 1.0) -> int:
     print(
-        "Teleop: W/S forward-back, A/D turn, space stop, Q quit.\n"
-        "Control input times out on the robot, so keys must be held."
+        "Teleop: W/S drive, A/D turn, space stop, Q quit.\n"
+        f"A command latches and is resent at {rate_hz:.0f} Hz, so holding a key is not\n"
+        f"required, but it is cancelled after {hold_s:.1f}s without any keypress.\n"
+        "The robot also zeroes its motors if control input goes stale."
     )
 
     period = 1.0 / rate_hz
 
     settings = termios.tcgetattr(sys.stdin)
+    selector = selectors.DefaultSelector()
+    selector.register(sys.stdin, selectors.EVENT_READ)
+
+    drive = 0
+    turn = 0
+    last_key = time.monotonic()
+
     try:
         tty.setraw(sys.stdin.fileno())
-
-        selector = selectors.DefaultSelector()
-        selector.register(sys.stdin, selectors.EVENT_READ)
-
-        x = 0
-        r = 0
 
         while True:
             if selector.select(period):
                 key = sys.stdin.read(1).lower()
+                last_key = time.monotonic()
 
-                if key == "q":
-                    link.send_manual_control(0, 0, 0, 0)
+                if key in ("q", "\x03"):  # q or Ctrl-C
+                    link.send_stop()
                     return 0
                 elif key == "w":
-                    x, r = speed, 0
+                    drive, turn = speed, 0
                 elif key == "s":
-                    x, r = -speed, 0
+                    drive, turn = -speed, 0
                 elif key == "a":
-                    x, r = 0, -speed
+                    drive, turn = 0, -speed
                 elif key == "d":
-                    x, r = 0, speed
+                    drive, turn = 0, speed
                 elif key == " ":
-                    x, r = 0, 0
-                elif key == "\x03":  # Ctrl-C
-                    link.send_manual_control(0, 0, 0, 0)
-                    return 0
+                    drive, turn = 0, 0
 
-            link.send_manual_control(x, 0, 0, r)
+            # Dead man: a single tap must not drive the robot indefinitely
+            elif (drive or turn) and time.monotonic() - last_key > hold_s:
+                drive, turn = 0, 0
+
+            link.send_drive(drive, turn)
     finally:
+        selector.close()
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
+
+        # Leave the robot stopped even if this exits on an exception
+        try:
+            link.send_stop()
+        except OSError:
+            pass
 
 
 def run_watch(link: Link) -> int:

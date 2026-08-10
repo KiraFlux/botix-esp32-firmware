@@ -67,7 +67,9 @@ void kf::main(kf::Init &init) {
 
     // hardware
 
-    system_hardware.init();
+    if (not system_hardware.init()) {
+        init.logger.error("Hardware init failed");
+    }
 
     // network: the station must exist before the UDP transport can bind
 
@@ -139,6 +141,9 @@ void kf::main(kf::Init &init) {
         .network = system_network.service,
         .transport = system_transport,
         .protocol = system_protocol,
+        .incoming_telemetry = system_telemetry.incoming,
+        .outgoing_telemetry = system_telemetry.outgoing,
+        .max_control_input_age_ms = system_config.device.mixer_service.max_control_input_age_ms,
     }};
 
     if (not system_console.init()) {

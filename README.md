@@ -54,6 +54,7 @@ air. Two channels are opened at boot:
 | `help`                         | List commands with their argument signatures                |
 | `info`                         | Uptime, free heap, WiFi state and address                   |
 | `reboot`                       | Restart the device                                          |
+| `telemetry`                    | Last control input with its age, and wheel odometry         |
 | `config list [prefix]`         | Show configuration fields, filtered by section or path      |
 | `config get <path>`            | Show one field                                              |
 | `config set <path> <value>`    | Change one field                                            |
@@ -132,6 +133,18 @@ pip install -r tools/requirements.txt
 
 The tool binds `user.udp.remote_port` locally, because that is where the robot
 sends replies and telemetry; it must match the robot's configuration.
+
+## Teleop
+
+`W`/`S` drive, `A`/`D` turn, space stops, `Q` quits. A command latches and is
+resent at 20 Hz, so a key need not be held; it is cancelled after a second
+without any keypress, and the robot zeroes its motors whenever control input
+goes stale. Raise `--speed` if the chassis does not break static friction:
+400 of 1000 was not always enough on a carpet, 700 was.
+
+The tank mixer takes drive from the MAVLink `z` axis and turn from `r`; `x` and
+`y` reach the arm and claw servos. Sending throttle on `x` moves the arm and
+leaves the wheels still.
 
 ## Current State
 
