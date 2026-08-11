@@ -331,6 +331,10 @@ struct ConsoleService final :
                 return _enum.params.value;
             }
 
+            template<kf::enum_type E> [[nodiscard]] constexpr auto enumValue() const noexcept {
+                return static_cast<E>(enumIndex());
+            }
+
             [[nodiscard]] constexpr auto enumName() const noexcept {
                 return _enum.items[enumIndex()].label();
             }
