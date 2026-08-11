@@ -39,10 +39,30 @@ struct LidarServiceConfig : kf::mixin::Resettable<LidarServiceConfig> {
 
     bool enabled;
 
+    /// @brief GPIO the sensor's data line is wired to
+    /// @note Must be given explicitly. The esp32dev variant defines no RX2, so
+    ///       HardwareSerial's default-pin branch for UART2 is preprocessed away
+    ///       and the peripheral comes up with no pin attached at all: it runs,
+    ///       reads nothing, and looks exactly like a dead sensor.
+    /// @note Declared after `enabled` so it lands in existing trailing padding.
+    ///       sizeof is unchanged, so a stored blob still loads and nobody has to
+    ///       retype WiFi credentials. Padding carries no guarantee of content,
+    ///       so an implausible value falls back to the default rather than
+    ///       binding some unrelated pin.
+    kf::u8 rx_pin;
+
+    /// @brief Where the lidar is wired on this chassis
+    static constexpr kf::u8 default_rx_pin{16};
+
+    [[nodiscard]] constexpr kf::u8 effectiveRxPin() const noexcept {
+        return (rx_pin >= 1 and rx_pin <= 39) ? rx_pin : default_rx_pin;
+    }
+
 private:
     KF_IMPL_RESETTABLE(LidarServiceConfig);
     constexpr void resetImpl() noexcept {
         uart_num = 2;
+        rx_pin = default_rx_pin;
         baudrate = 230'400;// LD06 / LD19 / D500 family
         remote_port = 14560;
         rx_buffer_length = 2048;
@@ -123,10 +143,21 @@ private:
 
         // Must precede begin() to take effect
         (void) _serial->setRxBufferSize(this->config().rx_buffer_length);
-        _serial->begin(this->config().baudrate, SERIAL_8N1);
+        // Pins passed explicitly; -1 for TX leaves GPIO17 free, and the sensor
+        // has no receive line to drive anyway
+        _serial->begin(
+            this->config().baudrate,
+            SERIAL_8N1,
+            static_cast<int8_t>(this->config().effectiveRxPin()),
+            -1);
 
         _running = true;
-        _logger.info("UART{} at {} baud -> port {}", this->config().uart_num, this->config().baudrate, this->config().remote_port);
+        _logger.info(
+            "UART{} rx=GPIO{} at {} baud -> port {}",
+            this->config().uart_num,
+            this->config().effectiveRxPin(),
+            this->config().baudrate,
+            this->config().remote_port);
         return true;
     }
 
