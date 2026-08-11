@@ -8,12 +8,14 @@
 #include "botix/transport/Kind.hpp"
 #include "botix/transport/Registry.hpp"
 
+#include "botix/service/LidarService.hpp"
+
 #include "botix/config/Config.hpp"
 
 namespace botix::config {
 
 /// @brief Deployment-scoped settings: what to start with and how to reach the network
-struct UserConfig : Config<UserConfig, 1> {
+struct UserConfig : Config<UserConfig, 2> {
 
     transport::Kind init_transport_kind;
     protocol::Kind init_protocol_kind;
@@ -22,12 +24,15 @@ struct UserConfig : Config<UserConfig, 1> {
 
     transport::Registry::Config transport_registry;
 
+    service::LidarService::Config lidar;
+
 private:
     KF_IMPL_RESETTABLE(UserConfig);
     constexpr void resetImpl() noexcept {
         version = UserConfig::latest_version;
         init_transport_kind = transport::Kind::Espnow;
         init_protocol_kind = protocol::Kind::Mavlink;
+        lidar.reset();
         network.reset();
         transport_registry.reset();
     }

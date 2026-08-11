@@ -113,6 +113,7 @@ struct MavlinkProtocol :
 
         if (context.outgoing_telemetry.wheel_distance.ready(context.timestamp)) {
             (void) sendWheelDistance(context);
+            (void) sendWheelTicks(context);
         }
 
         if (_heartbeat_timer.expired(context.timestamp)) {
@@ -233,9 +234,11 @@ private:
 
         kf::u8 const wheel_count = 2;
 
+        // WHEEL_DISTANCE is specified in metres. Multiplying millimetres by 1000
+        // overstated it by a factor of a million.
         kf::f64 const distance[wheel_count]{
-            context.outgoing_telemetry.wheel_distance.value().left_mm * 1'000,
-            context.outgoing_telemetry.wheel_distance.value().right_mm * 1'000,
+            context.outgoing_telemetry.wheel_distance.value().left_mm / 1'000,
+            context.outgoing_telemetry.wheel_distance.value().right_mm / 1'000,
         };
 
         (void) mavlink_msg_wheel_distance_pack(
@@ -245,6 +248,39 @@ private:
             static_cast<kf::u64>(context.timestamp) * 1'000'000,// time_usec
             wheel_count,
             distance);
+
+        return sendMessage(context.transport_link, message);
+    }
+
+    /// @brief Publish raw encoder counts as a pair of NAMED_VALUE_INT messages
+    /// @note No standard message carries two wheel counters, and a custom dialect
+    ///       would force every consumer to regenerate headers. Both are stamped
+    ///       with the same time_boot_ms so a receiver can pair them.
+    [[nodiscard]] bool sendWheelTicks(PollContext const &context) const noexcept {
+        auto const &value = context.outgoing_telemetry.wheel_distance.value();
+        auto const time_boot_ms = static_cast<kf::u32>(context.timestamp);
+
+        mavlink_message_t message;
+
+        (void) mavlink_msg_named_value_int_pack(
+            this->config().system_id_self,
+            this->config().component_id_wheel_distance,
+            &message,
+            time_boot_ms,
+            "enc_left",
+            value.left_ticks);
+
+        if (not sendMessage(context.transport_link, message)) {
+            return false;
+        }
+
+        (void) mavlink_msg_named_value_int_pack(
+            this->config().system_id_self,
+            this->config().component_id_wheel_distance,
+            &message,
+            time_boot_ms,
+            "enc_right",
+            value.right_ticks);
 
         return sendMessage(context.transport_link, message);
     }

@@ -13,6 +13,7 @@
 #include "botix/system/ConfigSystem.hpp"
 #include "botix/system/ConsoleSystem.hpp"
 #include "botix/system/HardwareSystem.hpp"
+#include "botix/system/LidarSystem.hpp"
 #include "botix/system/NetworkSystem.hpp"
 #include "botix/system/ProtocolSystem.hpp"
 #include "botix/system/TelemetrySystem.hpp"
@@ -40,6 +41,11 @@ void kf::main(kf::Init &init) {
 
     static botix::system::TransportSystem system_transport{{
         .config = system_config.user.transport_registry,
+    }};
+
+    static botix::system::LidarSystem system_lidar{{
+        .config = system_config.user.lidar,
+        .remote = system_config.user.transport_registry.wifi_udp.remote,
     }};
 
     static botix::system::ProtocolSystem system_protocol{{
@@ -75,6 +81,12 @@ void kf::main(kf::Init &init) {
 
     system_network.init();
 
+    // lidar: needs the station up before it can forward anything
+
+    if (not system_lidar.init()) {
+        init.logger.error("Lidar init failed");
+    }
+
     // telemetry
 
     system_telemetry.init();
@@ -83,6 +95,8 @@ void kf::main(kf::Init &init) {
         return {
             .left_mm = system_hardware.periphery.wheel_odometry_encoder_left.positionUnits(),
             .right_mm = system_hardware.periphery.wheel_odometry_encoder_right.positionUnits(),
+            .left_ticks = system_hardware.periphery.wheel_odometry_encoder_left.positionTicks(),
+            .right_ticks = system_hardware.periphery.wheel_odometry_encoder_right.positionTicks(),
         };
     });
 
@@ -141,6 +155,8 @@ void kf::main(kf::Init &init) {
         .network = system_network.service,
         .transport = system_transport,
         .protocol = system_protocol,
+        .lidar = system_lidar.service,
+        .lidar_remote = system_config.user.transport_registry.wifi_udp.remote,
         .incoming_telemetry = system_telemetry.incoming,
         .outgoing_telemetry = system_telemetry.outgoing,
         .max_control_input_age_ms = system_config.device.mixer_service.max_control_input_age_ms,
@@ -196,6 +212,7 @@ void kf::main(kf::Init &init) {
         system_behavior.poll(now);
         system_config.poll(now);
         system_hardware.poll(now);
+        system_lidar.poll(now);
 
         if (maybe_serial_channel.isSome() and init.io.availableForRead() > 0) {
             if (auto const read = init.io.readBuffer(serial_read_buffer); read.isOk()) {

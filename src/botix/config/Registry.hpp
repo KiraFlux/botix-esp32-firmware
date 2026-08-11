@@ -260,6 +260,23 @@ private:
         // udp transport
         BOTIX_FIELD(UserConfig, "udp.local_port", transport_registry.wifi_udp.local_port, Kind::Unsigned, kf::u16),
         BOTIX_FIELD(UserConfig, "udp.remote_ip", transport_registry.wifi_udp.remote.address, Kind::Ipv4, kf::u32),
+        // lidar
+        BOTIX_FIELD(UserConfig, "lidar.enabled", lidar.enabled, Kind::Boolean, bool),
+        BOTIX_FIELD(UserConfig, "lidar.baudrate", lidar.baudrate, Kind::Unsigned, kf::u32),
+        BOTIX_FIELD(UserConfig, "lidar.rx_buffer", lidar.rx_buffer_length, Kind::Unsigned, kf::u16),
+        Field{
+            .path = "lidar.uart",
+            .offset = BOTIX_CONFIG_OFFSET(UserConfig, lidar.uart_num),
+            .size = sizeof(kf::u8),
+            .kind = Kind::Unsigned,
+            .secret = false,
+            .options = {},
+            // UART0 is the console and the programming line
+            .min = kf::some(1.0),
+            .max = kf::some(2.0),
+        },
+        BOTIX_FIELD(UserConfig, "lidar.port", lidar.remote_port, Kind::Unsigned, kf::u16),
+
         BOTIX_FIELD(UserConfig, "udp.remote_port", transport_registry.wifi_udp.remote.port, Kind::Unsigned, kf::u16),
     };
 

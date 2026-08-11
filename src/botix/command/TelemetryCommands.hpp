@@ -60,6 +60,8 @@ private:
         auto const &wheels = _outgoing.wheel_distance.value();
         call.output.print("wheel.left_mm      : {}", wheels.left_mm);
         call.output.print("wheel.right_mm     : {}", wheels.right_mm);
+        call.output.print("wheel.left_ticks   : {}", wheels.left_ticks);
+        call.output.print("wheel.right_ticks  : {}", wheels.right_ticks);
     }
 };
 

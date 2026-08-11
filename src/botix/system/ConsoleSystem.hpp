@@ -14,6 +14,7 @@
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/OutgoingTelemetry.hpp"
 #include "botix/command/ConfigCommands.hpp"
+#include "botix/command/LidarCommands.hpp"
 #include "botix/command/SystemCommands.hpp"
 #include "botix/command/TelemetryCommands.hpp"
 #include "botix/command/TransportCommands.hpp"
@@ -44,6 +45,8 @@ struct ConsoleSystem : System<ConsoleSystem, bool()> {
         service::NetworkService &network;
         TransportSystem &transport;
         ProtocolSystem &protocol;
+        service::LidarService &lidar;
+        transport::IpEndpoint const &lidar_remote;
         IncomingTelemetry &incoming_telemetry;
         OutgoingTelemetry &outgoing_telemetry;
         /// @brief Age past which the mixer discards control input
@@ -65,6 +68,10 @@ struct ConsoleSystem : System<ConsoleSystem, bool()> {
             .registry = deps.registry,
             .device_service = deps.device_config_service,
             .user_service = deps.user_config_service,
+        }},
+        _lidar_commands{{
+            .lidar = deps.lidar,
+            .remote = deps.lidar_remote,
         }},
         _telemetry_commands{{
             .incoming = deps.incoming_telemetry,
@@ -97,6 +104,7 @@ private:
     command::SystemCommands _system_commands;
     command::TransportCommands _transport_commands;
     command::ConfigCommands _config_commands;
+    command::LidarCommands _lidar_commands;
     command::TelemetryCommands _telemetry_commands;
 
     BOTIX_IMPL_SYSTEM(ConsoleSystem, bool());
@@ -114,6 +122,11 @@ private:
 
         if (not _config_commands.registerIn(service, _arena)) {
             _logger.error("config commands registration failed");
+            return false;
+        }
+
+        if (not _lidar_commands.registerIn(service, _arena)) {
+            _logger.error("lidar commands registration failed");
             return false;
         }
 
