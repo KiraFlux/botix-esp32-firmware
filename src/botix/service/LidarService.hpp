@@ -151,6 +151,11 @@ private:
             static_cast<int8_t>(this->config().effectiveRxPin()),
             -1);
 
+        // Idle UART is high. Without a pull-up an unconnected RX floats and the
+        // peripheral frames noise into bytes, which reads as a live sensor
+        // talking gibberish rather than as a wire that is not attached.
+        pinMode(this->config().effectiveRxPin(), INPUT_PULLUP);
+
         _running = true;
         _logger.info(
             "UART{} rx=GPIO{} at {} baud -> port {}",
