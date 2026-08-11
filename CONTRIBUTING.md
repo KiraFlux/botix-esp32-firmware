@@ -62,7 +62,7 @@ We use a [**coded rule system**](#common-violations-vcodes) (`V...P.`) to keep r
 
 ## Code Style
 
-We follow the same style as the [KiraFlux Toolkit](https://github.com/KiraFlux/KiraFlux-Toolkit/blob/main/CONTRIBUTING.md), with the additions below.
+We follow the same style as the [KiraFlux Toolkit](https://github.com/KiraFlux/KiraFlux-Toolkit/blob/dev/CONTRIBUTING.md#code-style), with the additions below.
 
 ### Include Organization
 
