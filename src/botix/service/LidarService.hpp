@@ -90,6 +90,7 @@ struct LidarService final :
     explicit constexpr LidarService(Dependencies deps) noexcept :
         kf::mixin::Configured<Config>{deps.config}, _remote{deps.remote} {}
 
+    [[nodiscard]] constexpr kf::u32 bytesRead() const noexcept { return _bytes_read; }
     [[nodiscard]] constexpr kf::u32 datagrams() const noexcept { return _datagrams; }
     [[nodiscard]] constexpr kf::u32 bytesForwarded() const noexcept { return _bytes_forwarded; }
     [[nodiscard]] constexpr kf::u32 sendFailures() const noexcept { return _send_failures; }
@@ -102,7 +103,7 @@ private:
     HardwareSerial *_serial{nullptr};
     WiFiUDP _udp{};
 
-    kf::u32 _datagrams{0}, _bytes_forwarded{0}, _send_failures{0};
+    kf::u32 _bytes_read{0}, _datagrams{0}, _bytes_forwarded{0}, _send_failures{0};
     kf::u16 _sequence{0};
     bool _running{false};
 
@@ -133,7 +134,7 @@ private:
     void pollImpl(kf::units::Milliseconds now) noexcept {
         (void) now;
 
-        if (not _running or _remote.empty()) {
+        if (not _running) {
             return;
         }
 
@@ -147,7 +148,15 @@ private:
                 return;
             }
 
-            forward({payload, read});
+            _bytes_read += read;
+
+            // Keep draining even with nowhere to send: the byte counter is the
+            // only evidence that the sensor itself is alive, and demanding a
+            // configured host first would make a wiring fault and a network
+            // fault look identical.
+            if (not _remote.empty()) {
+                forward({payload, read});
+            }
 
             // A partial fill means the buffer is drained; leave the rest of the
             // budget to the other systems in this iteration

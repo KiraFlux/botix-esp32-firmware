@@ -52,12 +52,21 @@ private:
         call.output.print("uart               : {}", _lidar.config().uart_num);
         call.output.print("baudrate           : {}", _lidar.config().baudrate);
         call.output.print("destination        : {}:{}", _remote.address, _lidar.config().remote_port);
+        call.output.print("bytes_read         : {}", _lidar.bytesRead());
         call.output.print("datagrams          : {}", _lidar.datagrams());
         call.output.print("bytes_forwarded    : {}", _lidar.bytesForwarded());
         call.output.print("send_failures      : {}", _lidar.sendFailures());
 
-        if (_lidar.bytesForwarded() == 0) {
-            call.output.print("note: nothing read yet; is the signal on GPIO16 and ground shared?");
+        // A handful of bytes is a line transient at init, not a stream. A real
+        // sensor at 230400 delivers thousands per second.
+        constexpr kf::u32 streaming_threshold{64};
+
+        if (_lidar.bytesRead() < streaming_threshold) {
+            call.output.print("note: no stream on the UART. Check power to the lidar, that its");
+            call.output.print("      motor actually spins, that TX reaches GPIO16, and that ground");
+            call.output.print("      is shared with the board.");
+        } else if (_remote.empty()) {
+            call.output.print("note: sensor is alive but user.udp.remote_ip is unset, so nothing is sent");
         }
     }
 };
