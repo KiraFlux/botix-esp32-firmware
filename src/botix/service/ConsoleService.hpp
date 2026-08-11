@@ -152,7 +152,7 @@ struct ConsoleService final :
                 }
             };
 
-            // TODO: make as mixin Parsable<Impl, Args const &...>
+            // TODO: make as Parsable<Impl, InputType, OutputType> static interface
             template<typename Impl> struct Parsable {
                 [[nodiscard]] constexpr bool parse(ParseContext const &context) noexcept {
                     return static_cast<Impl *>(this)->parseImpl(context);
@@ -215,7 +215,6 @@ struct ConsoleService final :
                 Parameters<BooleanItem::ValueType> params;
             };
 
-            // TODO: make special case of Enum
             struct Boolean : Value<Boolean, BooleanParameters> {
 
                 using Value<Boolean, BooleanParameters>::Value;
@@ -489,6 +488,7 @@ struct ConsoleService final :
         _channels{arena.allocate<Channel>(config.max_channels)},
         _commands{internal::allocateNonTrivial<Command>(arena, config.max_commands)} {}
 
+    // TODO: change return type to Result with reference capture (needs kf ok-reference)
     [[nodiscard]] auto addChannel(kf::Arena &arena) noexcept -> kf::Option<Channel &> {
         auto const channel_alocation_length{
             this->config().channel_input_queue_length +
@@ -496,7 +496,7 @@ struct ConsoleService final :
             this->config().channel_output_line_length};
 
         if (_channels.full() or arena.available() < channel_alocation_length) { return kf::none; }
-
+        // TODO: move allocation calls to Channel constructor
         auto input_queue_buffer = arena.allocate<char>(this->config().channel_input_queue_length);
         auto input_line_buffer = arena.allocate<char>(this->config().channel_input_line_length);
         auto output_line_buffer = arena.allocate<char>(this->config().channel_output_line_length);
@@ -510,6 +510,15 @@ struct ConsoleService final :
         });
 
         return _channels.top();
+    }
+
+    [[nodiscard]] auto getCommand(kf::StringView name) noexcept -> kf::Option<Command &> {
+        for (auto &c: _commands) {
+            if (c.name() == name) {
+                return kf::someRef(c);
+            }
+        }
+        return kf::none;
     }
 
     // TODO: return Result<Command &, Error> (needs kf ok-reference)
@@ -596,15 +605,6 @@ private:
         });
     }
 
-    [[nodiscard]] auto getCommand(kf::StringView name) noexcept -> kf::Option<Command &> {
-        for (auto &c: _commands) {
-            if (c.name() == name) {
-                return kf::someRef(c);
-            }
-        }
-        return kf::none;
-    }
-
     BOTIX_IMPL_SERVICE(Self);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         for (auto &channel: _channels) {
@@ -615,7 +615,7 @@ private:
                     case '\b':
                     case '\x7F':
                         if (channel.input_line.read().isNone()) {
-                            _logger.error("input buffer is empty");
+                            _logger.debug("input buffer is empty");
                         }
                         break;
 
