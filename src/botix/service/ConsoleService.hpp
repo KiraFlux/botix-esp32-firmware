@@ -79,12 +79,12 @@ struct ConsoleService final :
             explicit constexpr Output(kf::Slice<char> buffer) noexcept :
                 _line{buffer} {}
 
-            template<typename... Args> void error(kf::internal::FormatString<Args...> fmt, Args const &...args) noexcept {
+            template<typename... Args> void error(kf::internal::FormatString<Args...> const &fmt, Args const &...args) noexcept {
                 _line.append("error: ");
                 print(fmt, args...);
             }
 
-            template<typename... Args> void print(kf::internal::FormatString<Args...> fmt, Args const &...args) noexcept {
+            template<typename... Args> void print(kf::internal::FormatString<Args...> const &fmt, Args const &...args) noexcept {
                 _line.format(fmt, args...);
                 (void) _line.write('\n');
             }
