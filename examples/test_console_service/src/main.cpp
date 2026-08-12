@@ -27,12 +27,15 @@ void kf::main(kf::Init &init) {
 
     auto &global_namespace = console_service.globalNamespace();
 
-    auto maybe_command = global_namespace.addCommand(init.arena, "cmd", [&init](botix::service::ConsoleService::Command::Context const &context) {
-        auto const e = context.arguments[0].enumValue<botix::transport::Kind>();
-        auto const flag = context.arguments[1].boolean();
+    auto maybe_command = global_namespace.addCommand(
+        init.arena,
+        {.name = "kek", .shortcut=kf::some('k')},
+        [&init](botix::service::ConsoleService::Command::Context const &context) {
+            auto const e = context.arguments[0].enumValue<botix::transport::Kind>();
+            auto const flag = context.arguments[1].boolean();
 
-        context.output.print("enum: {}, flag={}", static_cast<int>(e), flag);
-    });
+            context.output.print("enum: {}, flag={}", static_cast<int>(e), flag);
+        });
 
     if (maybe_command.isNone()) {
         init.logger.error("command fail");
@@ -42,13 +45,13 @@ void kf::main(kf::Init &init) {
     auto &command = maybe_command.unwrap();
 
     botix::service::ConsoleService::Command::Argument::EnumItem const transports[]{
-        {"espnow", botix::transport::Kind::Espnow},
-        {"wifi", botix::transport::Kind::Wifi},
+        {{"espnow"}, botix::transport::Kind::Espnow},
+        {{.name="wifi", .shortcut=kf::none}, botix::transport::Kind::Wifi},
     };
 
-    (void) command.addEnumArgument("transport", {.items{transports}});
+    (void) command.addEnumArgument({"transport"}, {.items{transports}});
 
-    (void) command.addBooleanArgument("my_flag", {.params{.default_value = kf::some(true)}});
+    (void) command.addBooleanArgument({"my_flag"}, {.params{.default_value = kf::some(true)}});
 
     // (void) command.addIntegerArgument("my_int", {{.min_value = kf::none}});
 
