@@ -9,21 +9,14 @@
 void kf::main(kf::Init &init) {
     init.logger.debug("hello test");
 
-    botix::service::ConsoleService::Config const console_service_config{
-        .max_channels = 4,
-        .max_commands = 10,
-        .command_max_arguments = 8,
-        .channel_input_queue_length = 100,
-        .channel_input_line_length = 100,
-        .channel_output_line_length = 512,
-    };
+    botix::service::ConsoleService::Config console_service_config{};
+    console_service_config.reset();
 
-    botix::service::ConsoleService console_service{
-        console_service_config,
-        init.arena,
-    };
+    auto maybe_console_service = botix::service::ConsoleService::create(init.arena, console_service_config);
 
-    auto maybe_channel = console_service.addChannel(init.arena);
+    auto &console_service = maybe_console_service.unwrap();
+
+    auto maybe_channel = console_service.addChannel(init.arena, true);
     if (maybe_channel.isNone()) {
         init.logger.error("channel fail");
         return;
@@ -32,7 +25,9 @@ void kf::main(kf::Init &init) {
     auto &channel = maybe_channel.unwrap();
     channel.echo = true;
 
-    auto maybe_command = console_service.addCommand(init.arena, "cmd", [&init](botix::service::ConsoleService::Command::Context const &context) {
+    auto &global_namespace = console_service.globalNamespace();
+
+    auto maybe_command = global_namespace.addCommand(init.arena, "cmd", [&init](botix::service::ConsoleService::Command::Context const &context) {
         auto const e = context.arguments[0].enumValue<botix::transport::Kind>();
         auto const flag = context.arguments[1].boolean();
 
