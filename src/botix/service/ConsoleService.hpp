@@ -84,7 +84,7 @@ struct HasIdentifier {
     }
 
     [[nodiscard]] constexpr bool match(kf::StringView name_or_shortcut) const noexcept {
-        return (not name_or_shortcut.empty()) and (_id.name == name_or_shortcut or _id.shortcut.unwrapOr(0) == name_or_shortcut[0]);
+        return (_id.name == name_or_shortcut) or (name_or_shortcut.length() == 1 and _id.shortcut.unwrapOr(0) == name_or_shortcut[0]);
     }
 
 private:
@@ -264,7 +264,7 @@ struct ConsoleServiceArgument :
             channel_output.error("'{}' not allowed, use:", lexeme);
             for (auto const &item: items) {
                 if (item.shortcut().isSome()) {
-                    channel_output.error("\t'{}' ('{}')", item.name(), item.shortcut().unwrap()); // TODO: impl ReprTo for HasIdentifier
+                    channel_output.error("\t'{}' ('{}')", item.name(), item.shortcut().unwrap());// TODO: impl ReprTo for HasIdentifier
                 } else {
                     channel_output.error("\t'{}'", item.name());
                 }
