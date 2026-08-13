@@ -18,14 +18,16 @@
 #include <kf/primitives.hpp>
 #include <kf/units.hpp>
 
+#include <kf/mixin/Callbacked.hpp>
 #include <kf/mixin/Configured.hpp>
+#include <kf/mixin/Flush.hpp>
 #include <kf/mixin/Labeled.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 #include <kf/mixin/Resettable.hpp>
 
 #include "botix/service/Service.hpp"
 
-namespace botix::internal {
+namespace botix::internal {// TODO: move to botix/cli and split it
 
 struct ConsoleServiceConfig : kf::mixin::Resettable<ConsoleServiceConfig> {
 
@@ -55,8 +57,9 @@ private:
 
 struct CreateWithArenaAndConfigTag {};
 
-template<typename Impl> struct CreateWithArenaAndConfig : CreateWithArenaAndConfigTag {
+template<typename Impl> struct CreateWithArenaAndConfig : CreateWithArenaAndConfigTag {// TODO: kf::mixin::CreateWithArena<typename ...AllocLengthGetterArgs>
 
+    // TODO: create Impl instance on arena too. returns Option<Impl &>
     template<typename... Args> [[nodiscard]] static constexpr auto create(
         kf::Arena &arena, ConsoleServiceConfig const &config, Args &&...args) noexcept -> kf::Option<Impl> {
         if (arena.available() < Impl::allocationLength(config)) { return kf::none; }
@@ -64,31 +67,15 @@ template<typename Impl> struct CreateWithArenaAndConfig : CreateWithArenaAndConf
     }
 };
 
+// TODO: impl ReprTo for Identifier
 struct Identifier {
+
     kf::StringView name;
     kf::Option<char> shortcut{name.empty() ? kf::none : kf::some(name[0])};
-};
-
-// like mixin::Labeled, but without setter
-struct HasIdentifier {
-
-    explicit constexpr HasIdentifier(Identifier id) noexcept :
-        _id{id} {}
-
-    [[nodiscard]] constexpr auto name() const noexcept {
-        return _id.name;
-    }
-
-    [[nodiscard]] constexpr auto shortcut() const noexcept {
-        return _id.shortcut;
-    }
 
     [[nodiscard]] constexpr bool match(kf::StringView name_or_shortcut) const noexcept {
-        return (_id.name == name_or_shortcut) or (name_or_shortcut.length() == 1 and _id.shortcut.unwrapOr(0) == name_or_shortcut[0]);
+        return (name == name_or_shortcut) or (name_or_shortcut.length() == 1 and shortcut.unwrapOr(0) == name_or_shortcut[0]);
     }
-
-private:
-    Identifier _id;
 };
 
 template<kf::implements<CreateWithArenaAndConfigTag> T> struct ItemContainer {
@@ -105,10 +92,10 @@ template<kf::implements<CreateWithArenaAndConfigTag> T> struct ItemContainer {
     }
 
     // TODO: return Result<Command &, Error> (needs kf ok-reference)
-    template<typename... Args> [[nodiscard]] auto add(kf::Arena &arena, ConsoleServiceConfig const &config, Args &&...args) noexcept -> kf::Option<T &> {
+    template<typename... Args> [[nodiscard]] auto add(kf::Arena &arena, Args &&...args) noexcept -> kf::Option<T &> {
         if (_items.full()) { return kf::none; }
 
-        auto maybe_item = T::create(arena, config, std::forward<Args>(args)...);
+        auto maybe_item = T::create(arena, std::forward<Args>(args)...);
         if (maybe_item.isNone()) { return kf::none; }
 
         (void) _items.write(std::move(maybe_item).unwrap());
@@ -119,7 +106,7 @@ private:
     kf::Stack<T> _items;
 };
 
-template<kf::implements<HasIdentifier> T> struct NamedItemContainer : ItemContainer<T> {
+template<kf::implements<Identifier> T> struct NamedItemContainer : ItemContainer<T> {
     using ItemContainer<T>::ItemContainer;
 
     auto get(kf::StringView name_or_shortcut) noexcept -> kf::Option<T &> {
@@ -134,11 +121,11 @@ template<kf::implements<HasIdentifier> T> struct NamedItemContainer : ItemContai
 
 template<typename T> struct ValueItem;
 
-template<kf::trivial T> struct ValueItem<T> : HasIdentifier {
+template<kf::trivial T> struct ValueItem<T> : Identifier {
     using ValueType = T;
 
     constexpr ValueItem(Identifier id, ValueType value) noexcept :
-        HasIdentifier{id}, _value{value} {}
+        Identifier{id}, _value{value} {}
 
     [[nodiscard]] constexpr T value() const noexcept {
         return _value;
@@ -148,14 +135,14 @@ private:
     ValueType _value;
 };
 
-template<> struct ValueItem<kf::StringView> : HasIdentifier {
+template<> struct ValueItem<kf::StringView> : Identifier {
     using ValueType = kf::StringView;
 
     constexpr ValueItem(Identifier id) noexcept :
-        HasIdentifier{id} {}
+        Identifier{id} {}
 
     [[nodiscard]] constexpr kf::StringView value() const noexcept {
-        return this->name();
+        return this->name;
     }
 };
 
@@ -168,77 +155,138 @@ struct ConsoleServiceChannel :
 
 {
 
-    struct Output : kf::mixin::NonCopyable {
+    struct Parameters {
+        bool echo;
+    };
 
-        explicit constexpr Output(kf::Slice<char> buffer) noexcept :
-            _line{buffer} {}
+    struct Input :
 
-        Output(Output &&other) noexcept : _line(std::move(other._line)) {}
+        kf::mixin::NonCopyable
 
-        Output &operator=(Output &&other) noexcept {
-            _line = std::move(other._line);
-            return *this;
+    {
+
+        enum class Status {
+            Idle,         // Queue is empty, nothing to process
+            LineReady,    // Line can be consumed (reach enter or buffer is full)
+            HintRequested,// Tabulation
+        };
+
+        explicit constexpr Input(kf::Slice<char> input_queue_buffer, kf::Slice<char> input_line_buffer) noexcept :
+            _input_queue{input_queue_buffer}, _input_line{input_line_buffer} {}
+
+        [[nodiscard]] bool feed(kf::StringView str) noexcept {
+            for (auto const c: str) {
+                if (not _input_queue.write(c)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
+        [[nodiscard]] auto peekLine() noexcept {
+            return _input_line.view();
+        }
+
+        [[nodiscard]] auto consumeLine() noexcept {
+            auto const line = _input_line.view();
+            _input_line.reset();// just pointer got moved, no string modification
+            return line;        // still view at line
+        }
+
+        [[nodiscard]] Status process() noexcept {
+            while (_input_queue.availableForRead() > 0) {
+                char const c = _input_queue.read().unwrap();
+
+                switch (c) {
+                    case '\t':
+                        return Status::HintRequested;
+
+                    case '\n':
+                        return Status::LineReady;
+
+                    case '\b':
+                    case '\x7F':
+                        (void) _input_line.read();// discarded: "common behavior"
+                        break;
+
+                    case 0x20 ... 0x7E:
+                        if (not _input_line.write(c)) {
+                            return Status::LineReady;
+                        }
+                        break;
+                }
+            }
+            return Status::Idle;
+        }
+
+    private:
+        kf::Queue<char> _input_queue;
+        kf::String _input_line;
+    };
+
+    struct Output :
+
+        kf::mixin::NonCopyable,
+        kf::mixin::Callbacked<void(kf::StringView)>,// TODO: actually, should not be callbacked. just need consume() -> StringView
+        kf::mixin::Flush<Output>
+
+    {
+
+        explicit constexpr Output(kf::Slice<char> buffer) noexcept :
+            _output_string{buffer} {}
+
         template<typename... Args> void error(kf::internal::FormatString<Args...> const &fmt, Args const &...args) noexcept {
-            _line.append("error: ");
+            _output_string.append("error: ");
             print(fmt, args...);
         }
 
         template<typename... Args> void print(kf::internal::FormatString<Args...> const &fmt, Args const &...args) noexcept {
-            _line.format(fmt, args...);
-            (void) _line.write('\n');
+            _output_string.format(fmt, args...);
+            (void) _output_string.write('\n');
+            this->flush();
         }
 
-        kf::String _line;
+    private:
+        kf::String _output_string;
+
+        KF_IMPL_FLUSH(Output);
+        constexpr void flushImpl() noexcept {
+            if (not _output_string.empty()) {
+                this->invoke(_output_string.view());
+            }
+            _output_string.reset();
+        }
     };
 
-    void feed(kf::StringView input) noexcept {
-        for (char c: input) {
-            if (not input_queue.write(c)) {
-                break;
-            }
-        }
-    }
+    struct Context {
+        kf::StringView input_line;
+        Parameters const &parameters;
+        Output &output;
+        kf::units::Milliseconds timestamp;
+        kf::u8 num;
+    };
 
-    ConsoleServiceChannel(ConsoleServiceChannel &&other) noexcept :
-        input_queue(std::move(other.input_queue)),
-        input_line(std::move(other.input_line)),
-        output(std::move(other.output)),
-        echo(other.echo) {}
+    Parameters parameters;
+    Input input;
+    Output output;
 
-    ConsoleServiceChannel &operator=(ConsoleServiceChannel &&other) noexcept {
-        input_queue = std::move(other.input_queue);
-        input_line = std::move(other.input_line);
-        output = std::move(other.output);
-        echo = other.echo;
-        return *this;
-    }
+private:
+    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceChannel>;
+    explicit constexpr ConsoleServiceChannel(kf::Arena &arena, ConsoleServiceConfig const &config, Parameters parameters) noexcept :
+        parameters{parameters},
+        input{arena.allocate<char>(config.channel_input_queue_length), arena.allocate<char>(config.channel_input_line_length)},
+        output{arena.allocate<char>(config.channel_output_line_length)} {}
 
-    [[nodiscard]] static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
+    static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
         return static_cast<kf::usize>(config.channel_input_queue_length + config.channel_input_line_length + config.channel_output_line_length);
     }
-
-    // TODO: Callbacked (sink)
-
-    // TODO: make private
-    kf::Queue<char> input_queue;
-    kf::String input_line;
-    Output output;
-    bool echo;
-
-    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceChannel>;
-    explicit constexpr ConsoleServiceChannel(kf::Arena &arena, ConsoleServiceConfig const &config, bool echo) noexcept :
-        input_queue{arena.allocate<char>(config.channel_input_queue_length)},
-        input_line{arena.allocate<char>(config.channel_input_line_length)},
-        output{arena.allocate<char>(config.channel_output_line_length)},
-        echo{echo} {}
 };
 
-struct ConsoleServiceArgument :
+struct ConsoleServiceArgument :// TODO: make as dyn interface. default getters returns safe mock values.
 
-    kf::mixin::NonCopyable,
-    HasIdentifier
+                               Identifier,
+                               kf::mixin::NonCopyable,
+                               kf::mixin::Resettable<ConsoleServiceArgument>
 
 {
 
@@ -247,15 +295,15 @@ struct ConsoleServiceArgument :
         Boolean,
         Integer,
         Real,
-        String,
+        String,// TODO: add IPv4
     };
 
     struct ParseContext {
         ConsoleServiceChannel::Output &channel_output;
         kf::StringView lexeme;// not empty
 
-        template<kf::implements<HasIdentifier> T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items) const noexcept -> kf::Option<T const &> {
-            for (auto const &item: items) {
+        template<kf::implements<Identifier> T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items) const noexcept -> kf::Option<T const &> {
+            for (auto const &item: items) {// TODO: impl for Slice firstWhere(F: bool(T)) -> Option<T &>
                 if (item.match(lexeme)) {
                     return kf::someRef(item);
                 }
@@ -263,10 +311,10 @@ struct ConsoleServiceArgument :
 
             channel_output.error("'{}' not allowed, use:", lexeme);
             for (auto const &item: items) {
-                if (item.shortcut().isSome()) {
-                    channel_output.error("\t'{}' ('{}')", item.name(), item.shortcut().unwrap());// TODO: impl ReprTo for HasIdentifier
+                if (item.shortcut.isSome()) {
+                    channel_output.error("\t'{}' ('{}')", item.name, item.shortcut.unwrap());
                 } else {
-                    channel_output.error("\t'{}'", item.name());
+                    channel_output.error("\t'{}'", item.name);
                 }
             }
 
@@ -274,6 +322,7 @@ struct ConsoleServiceArgument :
         }
     };
 
+    // TODO: rename to one thins (no ..s)
     template<kf::trivial T> struct Parameters : kf::mixin::Resettable<Parameters<T>> {
         T value{};
         kf::Option<T> default_value;
@@ -287,7 +336,7 @@ struct ConsoleServiceArgument :
         }
     };
 
-    // TODO: make as Parsable<Impl, InputType, OutputType> static interface
+    // TODO: make as kf::mixin::Parsable<Impl, InputType, OutputType> static interface
     template<typename Impl> struct Parsable {
         [[nodiscard]] constexpr bool parse(ParseContext const &context) noexcept {
             return static_cast<Impl *>(this)->parseImpl(context);
@@ -404,7 +453,7 @@ struct ConsoleServiceArgument :
                 auto const name_provider = [](auto s) { return s; };
 
                 if (auto maybe_item = context.parseEnumerated(options); maybe_item.isSome()) {
-                    this->params.value = maybe_item.unwrap().name();
+                    this->params.value = maybe_item.unwrap().name;
                     return true;
                 }
 
@@ -419,19 +468,19 @@ struct ConsoleServiceArgument :
     // construct
 
     explicit constexpr ConsoleServiceArgument(Identifier id, EnumParameters params) noexcept :
-        HasIdentifier{id}, _enum{params}, _kind{Kind::Enum} {}
+        Identifier{id}, _enum{params}, _kind{Kind::Enum} {}
 
     explicit constexpr ConsoleServiceArgument(Identifier id, BooleanParameters params) noexcept :
-        HasIdentifier{id}, _boolean{params}, _kind{Kind::Boolean} {}
+        Identifier{id}, _boolean{params}, _kind{Kind::Boolean} {}
 
     explicit constexpr ConsoleServiceArgument(Identifier id, IntegerParameters params) noexcept :
-        HasIdentifier{id}, _integer{params}, _kind{Kind::Integer} {}
+        Identifier{id}, _integer{params}, _kind{Kind::Integer} {}
 
     explicit constexpr ConsoleServiceArgument(Identifier id, RealParameters params) noexcept :
-        HasIdentifier{id}, _real{params}, _kind{Kind::Real} {}
+        Identifier{id}, _real{params}, _kind{Kind::Real} {}
 
     explicit constexpr ConsoleServiceArgument(Identifier id, StringParameters params) noexcept :
-        HasIdentifier{id}, _string{params}, _kind{Kind::String} {}
+        Identifier{id}, _string{params}, _kind{Kind::String} {}
 
     // get
 
@@ -444,7 +493,7 @@ struct ConsoleServiceArgument :
     }
 
     [[nodiscard]] constexpr auto enumName() const noexcept {
-        return _enum.items[enumIndex()].name();
+        return _enum.items[enumIndex()].name;
     }
 
     [[nodiscard]] constexpr auto boolean() const noexcept {
@@ -469,14 +518,17 @@ struct ConsoleServiceArgument :
         return _kind;
     }
 
-    [[nodiscard]] constexpr bool hasDefault() const noexcept {
+    [[nodiscard]] constexpr bool positional() const noexcept {
+        auto const is_positional = [](auto const &x) {
+            return x.params.default_value.isNone();
+        };
         switch (_kind) {
-            case Kind::Enum: return _enum.params.default_value.isSome();
-            case Kind::Boolean: return _boolean.params.default_value.isSome();
-            case Kind::Integer: return _integer.params.default_value.isSome();
-            case Kind::Real: return _real.params.default_value.isSome();
-            case Kind::String: return _string.params.default_value.isSome();
-            default: return false;
+            case Kind::Enum: return is_positional(_enum);
+            case Kind::Boolean: return is_positional(_boolean);
+            case Kind::Integer: return is_positional(_integer);
+            case Kind::Real: return is_positional(_real);
+            case Kind::String: return is_positional(_string);
+            default: return true;
         }
     }
 
@@ -491,16 +543,6 @@ struct ConsoleServiceArgument :
         };
     }
 
-    void reset() noexcept {
-        switch (_kind) {
-            case Kind::Enum: return _enum.params.reset();
-            case Kind::Boolean: _boolean.params.reset(); break;
-            case Kind::Integer: _integer.params.reset(); break;
-            case Kind::Real: _real.params.reset(); break;
-            case Kind::String: _string.params.reset(); break;
-        };
-    }
-
 private:
     union {
         Enum _enum;
@@ -511,27 +553,32 @@ private:
     };
 
     Kind _kind;
+
+    KF_IMPL_RESETTABLE(ConsoleServiceArgument);
+    void resetImpl() noexcept {
+        switch (_kind) {
+            case Kind::Enum: _enum.params.reset(); break;
+            case Kind::Boolean: _boolean.params.reset(); break;
+            case Kind::Integer: _integer.params.reset(); break;
+            case Kind::Real: _real.params.reset(); break;
+            case Kind::String: _string.params.reset(); break;
+        };
+    }
 };
 
 struct ConsoleServiceCommand :
 
     kf::mixin::NonCopyable,
-    HasIdentifier,
+    Identifier,
     CreateWithArenaAndConfig<ConsoleServiceCommand>
 
 {
     using Argument = ConsoleServiceArgument;
 
     struct Context {
+        ConsoleServiceChannel::Context const &channel;
         kf::Slice<Argument const> arguments;
-        ConsoleServiceChannel::Output &output;
-        kf::units::Milliseconds timestamp;
-        kf::u8 channel_num;
     };
-
-    [[nodiscard]] static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
-        return static_cast<kf::usize>(config.max_command_argument_count * sizeof(Argument));
-    }
 
     // properties
 
@@ -544,9 +591,9 @@ struct ConsoleServiceCommand :
     }
 
     [[nodiscard]] constexpr kf::usize positionalArgumentsCount() const noexcept {
-        kf::usize count = _arguments.length();
+        kf::usize count = 0;
         for (auto const &a: _arguments) {
-            count -= static_cast<kf::usize>(a.hasDefault());
+            count += static_cast<kf::usize>(a.positional());
         }
         return count;
     }
@@ -588,24 +635,24 @@ private:
 
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceCommand>;
     explicit constexpr ConsoleServiceCommand(kf::Arena &arena, ConsoleServiceConfig const &config, Identifier id, auto &&handler) noexcept :
-        HasIdentifier{id},
+        Identifier{id},
         _arguments{arena.allocate<Argument>(config.max_command_argument_count)},
         _handler{std::forward<decltype(handler)>(handler)} {}
+
+    static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
+        return static_cast<kf::usize>(config.max_command_argument_count * sizeof(Argument));
+    }
 };
 
 struct ConsoleServiceNamespace :
 
     kf::mixin::NonCopyable,
     kf::mixin::Configured<internal::ConsoleServiceConfig>,
-    HasIdentifier,
+    Identifier,
     CreateWithArenaAndConfig<ConsoleServiceNamespace>,
     private NamedItemContainer<ConsoleServiceCommand>
 
 {
-
-    [[nodiscard]] static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
-        return static_cast<kf::usize>(config.max_command_count * sizeof(ConsoleServiceCommand));
-    }
 
     [[nodiscard]] auto getCommand(kf::StringView name_or_shortcut) noexcept {
         return this->get(name_or_shortcut);
@@ -619,8 +666,12 @@ private:
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceNamespace>;
     explicit constexpr ConsoleServiceNamespace(kf::Arena &arena, ConsoleServiceConfig const &config, Identifier id) noexcept :
         kf::mixin::Configured<ConsoleServiceConfig>{config},
-        HasIdentifier{id},
+        Identifier{id},
         NamedItemContainer<ConsoleServiceCommand>{arena, config.max_command_count} {}
+
+    static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
+        return static_cast<kf::usize>(config.max_command_count * sizeof(ConsoleServiceCommand));
+    }
 };
 
 using ConsoleServiceChannelContainer = ItemContainer<ConsoleServiceChannel>;
@@ -631,7 +682,7 @@ using ConsoleServiceNamespaceContainer = NamedItemContainer<ConsoleServiceNamesp
 
 namespace botix::service {
 
-struct ConsoleService final :
+struct ConsoleService final : // TODO: make just Console, not a service
 
     Service<ConsoleService>,
     kf::mixin::Configured<internal::ConsoleServiceConfig>,
@@ -645,10 +696,6 @@ struct ConsoleService final :
     using Command = internal::ConsoleServiceCommand;
     using Namespace = internal::ConsoleServiceNamespace;
 
-    [[nodiscard]] static constexpr auto allocationLength(Config const &config) noexcept {
-        return static_cast<kf::usize>(config.max_channel_count * sizeof(Channel) + config.max_namespace_count * sizeof(Namespace));
-    }
-
     // TODO: help command
 
     // channel
@@ -661,8 +708,8 @@ struct ConsoleService final :
         return internal::ConsoleServiceChannelContainer::items();
     }
 
-    [[nodiscard]] decltype(auto) addChannel(kf::Arena &arena, bool echo) noexcept {
-        return internal::ConsoleServiceChannelContainer::add(arena, this->config(), std::move(echo));
+    [[nodiscard]] decltype(auto) addChannel(kf::Arena &arena, Channel::Parameters params) noexcept {
+        return internal::ConsoleServiceChannelContainer::add(arena, this->config(), params);
     }
 
     // command namespace
@@ -690,14 +737,6 @@ struct ConsoleService final :
 private:
     kf::Logger _logger{"ConsoleService"};
 
-    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleService>;
-    explicit ConsoleService(kf::Arena &arena, Config const &config) noexcept :
-        kf::mixin::Configured<Config>{config},
-        internal::ConsoleServiceChannelContainer{arena, config.max_channel_count},
-        internal::ConsoleServiceNamespaceContainer{arena, config.max_namespace_count} {
-        (void) this->addNamespace(arena, {.name = "global", .shortcut = kf::none});
-    }
-
     [[nodiscard]] auto resolveCommand(kf::StringView lexeme) noexcept -> kf::Option<Command &> {
         auto const maybe_delimeter_index = lexeme.indexOf('.');
 
@@ -713,14 +752,14 @@ private:
         return namespace_.unwrap().getCommand(lexeme.fromOffset(delimeter_index + 1));
     }
 
-    void onInputLine(kf::units::Milliseconds timestamp, Channel &channel, kf::u8 channel_num) noexcept {
-        if (channel.echo) {
-            channel.output.print("[#{}]>>> {}", channel_num, channel.input_line.view());
+    void onInputLineReady(Channel::Context const &channel_context) noexcept {
+        if (channel_context.parameters.echo) {
+            channel_context.output.print("[#{}]>>> {}", channel_context.num, channel_context.input_line);
         }
 
         kf::StringView tokens_buffer[this->config().max_command_argument_count]{};
 
-        auto tokens = channel.input_line.view().trim().split({tokens_buffer, this->config().max_command_argument_count});
+        auto tokens = channel_context.input_line.trim().split({tokens_buffer, this->config().max_command_argument_count});
 
         if (tokens.empty()) {
             return;
@@ -730,7 +769,7 @@ private:
         auto maybe_command = resolveCommand(name);
 
         if (maybe_command.isNone()) {
-            channel.output.error("unknown command: {}", name);
+            channel_context.output.error("unknown command: {}", name);
             return;
         }
 
@@ -738,7 +777,7 @@ private:
         auto argument_tokens = tokens.fromOffset(1);
 
         if (argument_tokens.length() < command.positionalArgumentsCount() or argument_tokens.length() > command.arguments().length()) {
-            channel.output.error("expected {}..{} arguments, got {}", command.positionalArgumentsCount(), command.arguments().length(), argument_tokens.length());
+            channel_context.output.error("expected {}..{} arguments, got {}", command.positionalArgumentsCount(), command.arguments().length(), argument_tokens.length());
             return;
         }
 
@@ -747,18 +786,17 @@ private:
         while (argument_index < argument_tokens.length()) {
             auto lexeme = argument_tokens[argument_index];
             auto &argument = command.arguments()[argument_index];
-            _logger.debug("{}: {}", argument.name(), argument.hasDefault());
 
-            if (not argument.parse({.channel_output = channel.output, .lexeme = lexeme})) {
+            if (not argument.parse({.channel_output = channel_context.output, .lexeme = lexeme})) {
                 parse_failed = true;
-                channel.output.print("note: failed argument name: '{}'", argument.name());
+                channel_context.output.print("note: failed argument '{}'", argument.name);
             }
 
             argument_index += 1;
         }
 
         if (parse_failed) {
-            channel.output.error("failed to parse positional argument(s)");
+            channel_context.output.error("failed to parse positional argument(s)");
             return;
         }
 
@@ -768,52 +806,47 @@ private:
         }
 
         command.execute({
+            .channel = channel_context,
             .arguments = command.arguments(),
-            .output = channel.output,
-            .timestamp = timestamp,
-            .channel_num = channel_num,
         });
-    }
-
-    void processChannel(kf::units::Milliseconds timestamp, Channel &channel, kf::u8 channel_num) noexcept {
-        while (channel.input_queue.availableForRead() > 0) {
-            char const c = channel.input_queue.read().unwrap();
-
-            switch (c) {
-                case '\b':
-                case '\x7F':
-                    if (channel.input_line.read().isNone()) {
-                        _logger.debug("input buffer is empty");
-                    }
-                    break;
-
-                case '\t':
-                    _logger.debug("tab");
-                    break;
-
-                case '\n':
-                    onInputLine(timestamp, channel, channel_num);
-                    channel.input_line.reset();
-                    break;
-
-                case 0x20 ... 0x7E:
-                    if (not channel.input_line.write(c)) {
-                        _logger.error("input buffer is full");
-                    }
-                    break;
-
-                default:
-                    _logger.warn("unknown char '{}' ({})", c, static_cast<int>(c));
-                    break;
-            }
-        }
     }
 
     BOTIX_IMPL_SERVICE(ConsoleService);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         for (kf::u8 channel_num = 0; channel_num < this->channels().length(); channel_num += 1) {
-            processChannel(now, this->channels()[channel_num], channel_num);
+            auto &channel = this->channels()[channel_num];
+
+            switch (channel.input.process()) {
+                case Channel::Input::Status::Idle:
+                    break;
+
+                case Channel::Input::Status::HintRequested:
+                    _logger.debug("hint: '{}'", channel.input.peekLine());// TODO: parse, suggestion depends on it.
+                    break;
+
+                case Channel::Input::Status::LineReady:
+                    onInputLineReady({
+                        .input_line = channel.input.consumeLine(),
+                        .parameters = channel.parameters,
+                        .output = channel.output,
+                        .timestamp = now,
+                        .num = channel_num,
+                    });
+                    break;
+            }
         }
+    }
+
+    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleService>;
+    explicit ConsoleService(kf::Arena &arena, Config const &config) noexcept :
+        kf::mixin::Configured<Config>{config},
+        internal::ConsoleServiceChannelContainer{arena, config.max_channel_count},
+        internal::ConsoleServiceNamespaceContainer{arena, config.max_namespace_count} {
+        (void) this->addNamespace(arena, {.name = "global", .shortcut = kf::none});
+    }
+
+    static constexpr auto allocationLength(Config const &config) noexcept {
+        return static_cast<kf::usize>(config.max_channel_count * sizeof(Channel) + config.max_namespace_count * sizeof(Namespace));
     }
 };
 

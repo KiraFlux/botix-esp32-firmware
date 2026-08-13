@@ -16,25 +16,27 @@ void kf::main(kf::Init &init) {
 
     auto &console_service = maybe_console_service.unwrap();
 
-    auto maybe_channel = console_service.addChannel(init.arena, true);
+    auto maybe_channel = console_service.addChannel(init.arena, {.echo = true});
     if (maybe_channel.isNone()) {
         init.logger.error("channel fail");
         return;
     }
 
     auto &channel = maybe_channel.unwrap();
-    channel.echo = true;
+    channel.output.callback([&init](StringView str) -> void {
+        init.logger.debug("output: {}", str);
+    });
 
     auto &global_namespace = console_service.globalNamespace();
 
     auto maybe_command = global_namespace.addCommand(
         init.arena,
-        {.name = "kek", .shortcut=kf::some('k')},
+        {.name = "kek", .shortcut = kf::some('e')},
         [&init](botix::service::ConsoleService::Command::Context const &context) {
             auto const e = context.arguments[0].enumValue<botix::transport::Kind>();
             auto const flag = context.arguments[1].boolean();
 
-            context.output.print("enum: {}, flag={}", static_cast<int>(e), flag);
+            context.channel.output.print("cmd:'{}' enum: {}, flag={}", context.channel.input_line, static_cast<int>(e), flag);
         });
 
     if (maybe_command.isNone()) {
@@ -46,7 +48,7 @@ void kf::main(kf::Init &init) {
 
     botix::service::ConsoleService::Command::Argument::EnumItem const transports[]{
         {{"espnow"}, botix::transport::Kind::Espnow},
-        {{.name="wifi", .shortcut=kf::none}, botix::transport::Kind::Wifi},
+        {{.name = "wifi", .shortcut = kf::none}, botix::transport::Kind::Wifi},
     };
 
     (void) command.addEnumArgument({"transport"}, {.items{transports}});
@@ -55,30 +57,20 @@ void kf::main(kf::Init &init) {
 
     // (void) command.addIntegerArgument("my_int", {{.min_value = kf::none}});
 
-    auto read_buffer = init.arena.allocate(100);
-
     while (true) {
         auto const now = rtos::Clock::now();
 
         if (init.io.availableForRead() > 0) {
-            auto read = init.io.readBuffer(read_buffer);
+            auto read = init.io.readByte();
 
             if (read.isOk()) {
-                channel.feed({
-                    reinterpret_cast<char const *>(read.ok().data()),
-                    read.ok().length(),
-                });
+                (void) channel.input.feed({reinterpret_cast<char const *>(&read.ok()), 1});
             } else {
                 init.logger.error("read error");
             }
         }
 
         console_service.poll(now);
-
-        if (not channel.output._line.empty()) {
-            init.logger.debug("output: {}", channel.output._line);
-            channel.output._line.reset();
-        }
 
         rtos::Task::sleep(1);
     }
