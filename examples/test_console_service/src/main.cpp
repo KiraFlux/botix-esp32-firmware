@@ -4,12 +4,13 @@
 #include <kf/rtos/Task.hpp>
 
 #include "botix/cli/Console.hpp"
+#include "botix/cli/Config.hpp"
 #include "botix/transport/Kind.hpp"
 
 void kf::main(kf::Init &init) {
     init.logger.debug("hello test");
 
-    botix::cli::Console::Config cli_console_config{
+    botix::cli::Config cli_console_config{
         .max_channel_count = 10,
     };
 

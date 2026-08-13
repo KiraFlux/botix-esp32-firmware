@@ -26,28 +26,9 @@
 #include <kf/mixin/Resettable.hpp>
 #include <kf/mixin/TimedPollable.hpp>
 
+#include "botix/cli/Config.hpp"
+
 namespace botix::internal {// TODO: move to botix/cli and split it
-
-struct ConsoleConfig : kf::mixin::Resettable<ConsoleConfig> {
-
-    kf::u8
-        max_channel_count{0x08},
-        max_namespace_count{0x10},
-        max_command_count{0x10},
-        max_command_argument_count{0x08};
-
-    kf::u16
-        channel_input_queue_length{0x02'00},
-        channel_input_line_length{0x00'80},
-        channel_output_line_length{0x00'80};
-
-private:
-    // TODO: extract as mixin::ResettableConfig<Impl>
-    KF_IMPL_RESETTABLE(ConsoleConfig);
-    constexpr void resetImpl() noexcept {
-        *this = ConsoleConfig{};
-    }
-};
 
 struct CreateWithArenaAndConfigTag {};
 
@@ -55,7 +36,7 @@ template<typename Impl> struct CreateWithArenaAndConfig : CreateWithArenaAndConf
 
     // TODO: create Impl instance on arena too. returns Option<Impl &>
     template<typename... Args> [[nodiscard]] static constexpr auto create(
-        kf::Arena &arena, ConsoleConfig const &config, Args &&...args) noexcept -> kf::Option<Impl> {
+        kf::Arena &arena, cli::Config const &config, Args &&...args) noexcept -> kf::Option<Impl> {
         if (arena.available() < Impl::allocationLength(config)) { return kf::none; }
         return kf::some(Impl{arena, config, std::forward<Args>(args)...});
     }
@@ -266,21 +247,22 @@ struct ConsoleChannel :
 
 private:
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleChannel>;
-    explicit constexpr ConsoleChannel(kf::Arena &arena, ConsoleConfig const &config, Parameters parameters) noexcept :
+    explicit constexpr ConsoleChannel(kf::Arena &arena, cli::Config const &config, Parameters parameters) noexcept :
         parameters{parameters},
         input{arena.allocate<char>(config.channel_input_queue_length), arena.allocate<char>(config.channel_input_line_length)},
         output{arena.allocate<char>(config.channel_output_line_length)} {}
 
-    static constexpr auto allocationLength(ConsoleConfig const &config) noexcept {
+    static constexpr auto allocationLength(cli::Config const &config) noexcept {
         return static_cast<kf::usize>(config.channel_input_queue_length + config.channel_input_line_length + config.channel_output_line_length);
     }
 };
 
-struct ConsoleArgument :// TODO: make as dyn interface. default getters returns safe mock values.
+// TODO: make as dyn interface. default getters returns safe mock values.
+struct ConsoleArgument :
 
-                        Identifier,
-                        kf::mixin::NonCopyable,
-                        kf::mixin::Resettable<ConsoleArgument>
+    Identifier,
+    kf::mixin::NonCopyable,
+    kf::mixin::Resettable<ConsoleArgument>
 
 {
 
@@ -628,12 +610,12 @@ private:
     kf::Function<void(Context const &)> _handler;
 
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleCommand>;
-    explicit constexpr ConsoleCommand(kf::Arena &arena, ConsoleConfig const &config, Identifier id, auto &&handler) noexcept :
+    explicit constexpr ConsoleCommand(kf::Arena &arena, cli::Config const &config, Identifier id, auto &&handler) noexcept :
         Identifier{id},
         _arguments{arena.allocate<Argument>(config.max_command_argument_count)},
         _handler{std::forward<decltype(handler)>(handler)} {}
 
-    static constexpr auto allocationLength(ConsoleConfig const &config) noexcept {
+    static constexpr auto allocationLength(cli::Config const &config) noexcept {
         return static_cast<kf::usize>(config.max_command_argument_count * sizeof(Argument));
     }
 };
@@ -641,7 +623,7 @@ private:
 struct ConsoleNamespace :
 
     kf::mixin::NonCopyable,
-    kf::mixin::Configured<internal::ConsoleConfig>,
+    kf::mixin::Configured<cli::Config>,
     Identifier,
     CreateWithArenaAndConfig<ConsoleNamespace>,
     private NamedItemContainer<ConsoleCommand>
@@ -658,12 +640,12 @@ struct ConsoleNamespace :
 
 private:
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleNamespace>;
-    explicit constexpr ConsoleNamespace(kf::Arena &arena, ConsoleConfig const &config, Identifier id) noexcept :
-        kf::mixin::Configured<ConsoleConfig>{config},
+    explicit constexpr ConsoleNamespace(kf::Arena &arena, cli::Config const &config, Identifier id) noexcept :
+        kf::mixin::Configured<cli::Config>{config},
         Identifier{id},
         NamedItemContainer<ConsoleCommand>{arena, config.max_command_count} {}
 
-    static constexpr auto allocationLength(ConsoleConfig const &config) noexcept {
+    static constexpr auto allocationLength(cli::Config const &config) noexcept {
         return static_cast<kf::usize>(config.max_command_count * sizeof(ConsoleCommand));
     }
 };
@@ -678,14 +660,13 @@ namespace botix::cli {
 
 struct Console final :
 
-    kf::mixin::Configured<internal::ConsoleConfig>,
+    kf::mixin::Configured<Config>,
     kf::mixin::TimedPollable<Console>,
     internal::CreateWithArenaAndConfig<Console>,
     private internal::ConsoleChannelContainer,
     private internal::ConsoleNamespaceContainer
 
 {
-    using Config = internal::ConsoleConfig;
     using Channel = internal::ConsoleChannel;
     using Command = internal::ConsoleCommand;
     using Namespace = internal::ConsoleNamespace;
