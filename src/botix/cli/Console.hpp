@@ -24,12 +24,11 @@
 #include <kf/mixin/Labeled.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 #include <kf/mixin/Resettable.hpp>
-
-#include "botix/service/Service.hpp"
+#include <kf/mixin/TimedPollable.hpp>
 
 namespace botix::internal {// TODO: move to botix/cli and split it
 
-struct ConsoleServiceConfig : kf::mixin::Resettable<ConsoleServiceConfig> {
+struct ConsoleConfig : kf::mixin::Resettable<ConsoleConfig> {
 
     kf::u8
         max_channel_count,
@@ -43,8 +42,10 @@ struct ConsoleServiceConfig : kf::mixin::Resettable<ConsoleServiceConfig> {
         channel_output_line_length;
 
 private:
-    KF_IMPL_RESETTABLE(ConsoleServiceConfig);
+    // TODO: check is can be reset via default construction
+    KF_IMPL_RESETTABLE(ConsoleConfig);
     constexpr void resetImpl() noexcept {
+        // TODO: move values as fields defaults
         max_channel_count = 0x08;
         max_namespace_count = 0x10;
         max_command_count = 0x10;
@@ -61,7 +62,7 @@ template<typename Impl> struct CreateWithArenaAndConfig : CreateWithArenaAndConf
 
     // TODO: create Impl instance on arena too. returns Option<Impl &>
     template<typename... Args> [[nodiscard]] static constexpr auto create(
-        kf::Arena &arena, ConsoleServiceConfig const &config, Args &&...args) noexcept -> kf::Option<Impl> {
+        kf::Arena &arena, ConsoleConfig const &config, Args &&...args) noexcept -> kf::Option<Impl> {
         if (arena.available() < Impl::allocationLength(config)) { return kf::none; }
         return kf::some(Impl{arena, config, std::forward<Args>(args)...});
     }
@@ -148,10 +149,10 @@ template<> struct ValueItem<kf::StringView> : Identifier {
 
 //
 
-struct ConsoleServiceChannel :
+struct ConsoleChannel :
 
     kf::mixin::NonCopyable,
-    CreateWithArenaAndConfig<ConsoleServiceChannel>
+    CreateWithArenaAndConfig<ConsoleChannel>
 
 {
 
@@ -271,22 +272,22 @@ struct ConsoleServiceChannel :
     Output output;
 
 private:
-    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceChannel>;
-    explicit constexpr ConsoleServiceChannel(kf::Arena &arena, ConsoleServiceConfig const &config, Parameters parameters) noexcept :
+    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleChannel>;
+    explicit constexpr ConsoleChannel(kf::Arena &arena, ConsoleConfig const &config, Parameters parameters) noexcept :
         parameters{parameters},
         input{arena.allocate<char>(config.channel_input_queue_length), arena.allocate<char>(config.channel_input_line_length)},
         output{arena.allocate<char>(config.channel_output_line_length)} {}
 
-    static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
+    static constexpr auto allocationLength(ConsoleConfig const &config) noexcept {
         return static_cast<kf::usize>(config.channel_input_queue_length + config.channel_input_line_length + config.channel_output_line_length);
     }
 };
 
-struct ConsoleServiceArgument :// TODO: make as dyn interface. default getters returns safe mock values.
+struct ConsoleArgument :// TODO: make as dyn interface. default getters returns safe mock values.
 
-                               Identifier,
-                               kf::mixin::NonCopyable,
-                               kf::mixin::Resettable<ConsoleServiceArgument>
+                        Identifier,
+                        kf::mixin::NonCopyable,
+                        kf::mixin::Resettable<ConsoleArgument>
 
 {
 
@@ -299,7 +300,7 @@ struct ConsoleServiceArgument :// TODO: make as dyn interface. default getters r
     };
 
     struct ParseContext {
-        ConsoleServiceChannel::Output &channel_output;
+        ConsoleChannel::Output &channel_output;
         kf::StringView lexeme;// not empty
 
         template<kf::implements<Identifier> T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items) const noexcept -> kf::Option<T const &> {
@@ -467,19 +468,19 @@ struct ConsoleServiceArgument :// TODO: make as dyn interface. default getters r
 
     // construct
 
-    explicit constexpr ConsoleServiceArgument(Identifier id, EnumParameters params) noexcept :
+    explicit constexpr ConsoleArgument(Identifier id, EnumParameters params) noexcept :
         Identifier{id}, _enum{params}, _kind{Kind::Enum} {}
 
-    explicit constexpr ConsoleServiceArgument(Identifier id, BooleanParameters params) noexcept :
+    explicit constexpr ConsoleArgument(Identifier id, BooleanParameters params) noexcept :
         Identifier{id}, _boolean{params}, _kind{Kind::Boolean} {}
 
-    explicit constexpr ConsoleServiceArgument(Identifier id, IntegerParameters params) noexcept :
+    explicit constexpr ConsoleArgument(Identifier id, IntegerParameters params) noexcept :
         Identifier{id}, _integer{params}, _kind{Kind::Integer} {}
 
-    explicit constexpr ConsoleServiceArgument(Identifier id, RealParameters params) noexcept :
+    explicit constexpr ConsoleArgument(Identifier id, RealParameters params) noexcept :
         Identifier{id}, _real{params}, _kind{Kind::Real} {}
 
-    explicit constexpr ConsoleServiceArgument(Identifier id, StringParameters params) noexcept :
+    explicit constexpr ConsoleArgument(Identifier id, StringParameters params) noexcept :
         Identifier{id}, _string{params}, _kind{Kind::String} {}
 
     // get
@@ -554,7 +555,7 @@ private:
 
     Kind _kind;
 
-    KF_IMPL_RESETTABLE(ConsoleServiceArgument);
+    KF_IMPL_RESETTABLE(ConsoleArgument);
     void resetImpl() noexcept {
         switch (_kind) {
             case Kind::Enum: _enum.params.reset(); break;
@@ -566,17 +567,17 @@ private:
     }
 };
 
-struct ConsoleServiceCommand :
+struct ConsoleCommand :
 
     kf::mixin::NonCopyable,
     Identifier,
-    CreateWithArenaAndConfig<ConsoleServiceCommand>
+    CreateWithArenaAndConfig<ConsoleCommand>
 
 {
-    using Argument = ConsoleServiceArgument;
+    using Argument = ConsoleArgument;
 
     struct Context {
-        ConsoleServiceChannel::Context const &channel;
+        ConsoleChannel::Context const &channel;
         kf::Slice<Argument const> arguments;
     };
 
@@ -633,24 +634,24 @@ private:
     kf::Stack<Argument> _arguments;
     kf::Function<void(Context const &)> _handler;
 
-    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceCommand>;
-    explicit constexpr ConsoleServiceCommand(kf::Arena &arena, ConsoleServiceConfig const &config, Identifier id, auto &&handler) noexcept :
+    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleCommand>;
+    explicit constexpr ConsoleCommand(kf::Arena &arena, ConsoleConfig const &config, Identifier id, auto &&handler) noexcept :
         Identifier{id},
         _arguments{arena.allocate<Argument>(config.max_command_argument_count)},
         _handler{std::forward<decltype(handler)>(handler)} {}
 
-    static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
+    static constexpr auto allocationLength(ConsoleConfig const &config) noexcept {
         return static_cast<kf::usize>(config.max_command_argument_count * sizeof(Argument));
     }
 };
 
-struct ConsoleServiceNamespace :
+struct ConsoleNamespace :
 
     kf::mixin::NonCopyable,
-    kf::mixin::Configured<internal::ConsoleServiceConfig>,
+    kf::mixin::Configured<internal::ConsoleConfig>,
     Identifier,
-    CreateWithArenaAndConfig<ConsoleServiceNamespace>,
-    private NamedItemContainer<ConsoleServiceCommand>
+    CreateWithArenaAndConfig<ConsoleNamespace>,
+    private NamedItemContainer<ConsoleCommand>
 
 {
 
@@ -663,63 +664,63 @@ struct ConsoleServiceNamespace :
     }
 
 private:
-    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleServiceNamespace>;
-    explicit constexpr ConsoleServiceNamespace(kf::Arena &arena, ConsoleServiceConfig const &config, Identifier id) noexcept :
-        kf::mixin::Configured<ConsoleServiceConfig>{config},
+    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleNamespace>;
+    explicit constexpr ConsoleNamespace(kf::Arena &arena, ConsoleConfig const &config, Identifier id) noexcept :
+        kf::mixin::Configured<ConsoleConfig>{config},
         Identifier{id},
-        NamedItemContainer<ConsoleServiceCommand>{arena, config.max_command_count} {}
+        NamedItemContainer<ConsoleCommand>{arena, config.max_command_count} {}
 
-    static constexpr auto allocationLength(ConsoleServiceConfig const &config) noexcept {
-        return static_cast<kf::usize>(config.max_command_count * sizeof(ConsoleServiceCommand));
+    static constexpr auto allocationLength(ConsoleConfig const &config) noexcept {
+        return static_cast<kf::usize>(config.max_command_count * sizeof(ConsoleCommand));
     }
 };
 
-using ConsoleServiceChannelContainer = ItemContainer<ConsoleServiceChannel>;
+using ConsoleChannelContainer = ItemContainer<ConsoleChannel>;
 
-using ConsoleServiceNamespaceContainer = NamedItemContainer<ConsoleServiceNamespace>;
+using ConsoleNamespaceContainer = NamedItemContainer<ConsoleNamespace>;
 
 }// namespace botix::internal
 
-namespace botix::service {
+namespace botix::cli {
 
-struct ConsoleService final : // TODO: make just Console, not a service
+struct Console final :
 
-    Service<ConsoleService>,
-    kf::mixin::Configured<internal::ConsoleServiceConfig>,
-    internal::CreateWithArenaAndConfig<ConsoleService>,
-    private internal::ConsoleServiceChannelContainer,
-    private internal::ConsoleServiceNamespaceContainer
+    kf::mixin::Configured<internal::ConsoleConfig>,
+    kf::mixin::TimedPollable<Console>,
+    internal::CreateWithArenaAndConfig<Console>,
+    private internal::ConsoleChannelContainer,
+    private internal::ConsoleNamespaceContainer
 
 {
-    using Config = internal::ConsoleServiceConfig;
-    using Channel = internal::ConsoleServiceChannel;
-    using Command = internal::ConsoleServiceCommand;
-    using Namespace = internal::ConsoleServiceNamespace;
+    using Config = internal::ConsoleConfig;
+    using Channel = internal::ConsoleChannel;
+    using Command = internal::ConsoleCommand;
+    using Namespace = internal::ConsoleNamespace;
 
     // TODO: help command
 
     // channel
 
     [[nodiscard]] decltype(auto) channels() const noexcept {
-        return internal::ConsoleServiceChannelContainer::items();
+        return internal::ConsoleChannelContainer::items();
     }
 
     [[nodiscard]] decltype(auto) channels() noexcept {
-        return internal::ConsoleServiceChannelContainer::items();
+        return internal::ConsoleChannelContainer::items();
     }
 
     [[nodiscard]] decltype(auto) addChannel(kf::Arena &arena, Channel::Parameters params) noexcept {
-        return internal::ConsoleServiceChannelContainer::add(arena, this->config(), params);
+        return internal::ConsoleChannelContainer::add(arena, this->config(), params);
     }
 
     // command namespace
 
     [[nodiscard]] decltype(auto) namespaces() const noexcept {
-        return internal::ConsoleServiceNamespaceContainer::items();
+        return internal::ConsoleNamespaceContainer::items();
     }
 
     [[nodiscard]] decltype(auto) namespaces() noexcept {
-        return internal::ConsoleServiceNamespaceContainer::items();
+        return internal::ConsoleNamespaceContainer::items();
     }
 
     [[nodiscard]] decltype(auto) globalNamespace() noexcept {
@@ -727,15 +728,15 @@ struct ConsoleService final : // TODO: make just Console, not a service
     }
 
     [[nodiscard]] decltype(auto) getNamespace(kf::StringView name_or_shortcut) noexcept {
-        return internal::ConsoleServiceNamespaceContainer::get(name_or_shortcut);
+        return internal::ConsoleNamespaceContainer::get(name_or_shortcut);
     }
 
     [[nodiscard]] decltype(auto) addNamespace(kf::Arena &arena, internal::Identifier id) {
-        return internal::ConsoleServiceNamespaceContainer::add(arena, this->config(), id);
+        return internal::ConsoleNamespaceContainer::add(arena, this->config(), id);
     }
 
 private:
-    kf::Logger _logger{"ConsoleService"};
+    kf::Logger _logger{"Console"};
 
     [[nodiscard]] auto resolveCommand(kf::StringView lexeme) noexcept -> kf::Option<Command &> {
         auto const maybe_delimeter_index = lexeme.indexOf('.');
@@ -811,7 +812,7 @@ private:
         });
     }
 
-    BOTIX_IMPL_SERVICE(ConsoleService);
+    KF_IMPL_TIMED_POLLABLE(Console);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         for (kf::u8 channel_num = 0; channel_num < this->channels().length(); channel_num += 1) {
             auto &channel = this->channels()[channel_num];
@@ -837,11 +838,11 @@ private:
         }
     }
 
-    friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleService>;
-    explicit ConsoleService(kf::Arena &arena, Config const &config) noexcept :
+    friend struct ::botix::internal::CreateWithArenaAndConfig<Console>;
+    explicit Console(kf::Arena &arena, Config const &config) noexcept :
         kf::mixin::Configured<Config>{config},
-        internal::ConsoleServiceChannelContainer{arena, config.max_channel_count},
-        internal::ConsoleServiceNamespaceContainer{arena, config.max_namespace_count} {
+        internal::ConsoleChannelContainer{arena, config.max_channel_count},
+        internal::ConsoleNamespaceContainer{arena, config.max_namespace_count} {
         (void) this->addNamespace(arena, {.name = "global", .shortcut = kf::none});
     }
 
@@ -850,4 +851,4 @@ private:
     }
 };
 
-}// namespace botix::service
+}// namespace botix::cli

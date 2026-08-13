@@ -3,16 +3,16 @@
 #include <kf/rtos/Clock.hpp>
 #include <kf/rtos/Task.hpp>
 
-#include "botix/service/ConsoleService.hpp"
+#include "botix/cli/Console.hpp"
 #include "botix/transport/Kind.hpp"
 
 void kf::main(kf::Init &init) {
     init.logger.debug("hello test");
 
-    botix::service::ConsoleService::Config console_service_config{};
-    console_service_config.reset();
+    botix::cli::Console::Config cli_console_config{};
+    cli_console_config.reset();
 
-    auto maybe_console_service = botix::service::ConsoleService::create(init.arena, console_service_config);
+    auto maybe_console_service = botix::cli::Console::create(init.arena, cli_console_config);
 
     auto &console_service = maybe_console_service.unwrap();
 
@@ -32,7 +32,7 @@ void kf::main(kf::Init &init) {
     auto maybe_command = global_namespace.addCommand(
         init.arena,
         {.name = "kek", .shortcut = kf::some('e')},
-        [&init](botix::service::ConsoleService::Command::Context const &context) {
+        [&init](botix::cli::Console::Command::Context const &context) {
             auto const e = context.arguments[0].enumValue<botix::transport::Kind>();
             auto const flag = context.arguments[1].boolean();
 
@@ -46,7 +46,7 @@ void kf::main(kf::Init &init) {
 
     auto &command = maybe_command.unwrap();
 
-    botix::service::ConsoleService::Command::Argument::EnumItem const transports[]{
+    botix::cli::Console::Command::Argument::EnumItem const transports[]{
         {{"espnow"}, botix::transport::Kind::Espnow},
         {{.name = "wifi", .shortcut = kf::none}, botix::transport::Kind::Wifi},
     };
