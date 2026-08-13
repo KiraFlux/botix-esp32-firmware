@@ -9,8 +9,9 @@
 void kf::main(kf::Init &init) {
     init.logger.debug("hello test");
 
-    botix::cli::Console::Config cli_console_config{};
-    cli_console_config.reset();
+    botix::cli::Console::Config cli_console_config{
+        .max_channel_count = 10,
+    };
 
     auto maybe_console_service = botix::cli::Console::create(init.arena, cli_console_config);
 

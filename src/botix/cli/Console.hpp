@@ -31,28 +31,21 @@ namespace botix::internal {// TODO: move to botix/cli and split it
 struct ConsoleConfig : kf::mixin::Resettable<ConsoleConfig> {
 
     kf::u8
-        max_channel_count,
-        max_namespace_count,
-        max_command_count,
-        max_command_argument_count;
+        max_channel_count{0x08},
+        max_namespace_count{0x10},
+        max_command_count{0x10},
+        max_command_argument_count{0x08};
 
     kf::u16
-        channel_input_queue_length,
-        channel_input_line_length,
-        channel_output_line_length;
+        channel_input_queue_length{0x02'00},
+        channel_input_line_length{0x00'80},
+        channel_output_line_length{0x00'80};
 
 private:
-    // TODO: check is can be reset via default construction
+    // TODO: extract as mixin::ResettableConfig<Impl>
     KF_IMPL_RESETTABLE(ConsoleConfig);
     constexpr void resetImpl() noexcept {
-        // TODO: move values as fields defaults
-        max_channel_count = 0x08;
-        max_namespace_count = 0x10;
-        max_command_count = 0x10;
-        max_command_argument_count = 0x08;
-        channel_input_queue_length = 0x02'00;
-        channel_input_line_length = 0x00'80;
-        channel_output_line_length = 0x00'80;
+        *this = ConsoleConfig{};
     }
 };
 
