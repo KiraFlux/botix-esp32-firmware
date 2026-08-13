@@ -27,6 +27,7 @@
 #include <kf/mixin/TimedPollable.hpp>
 
 #include "botix/cli/Config.hpp"
+#include "botix/cli/Identifier.hpp"
 
 namespace botix::internal {// TODO: move to botix/cli and split it
 
@@ -39,17 +40,6 @@ template<typename Impl> struct CreateWithArenaAndConfig : CreateWithArenaAndConf
         kf::Arena &arena, cli::Config const &config, Args &&...args) noexcept -> kf::Option<Impl> {
         if (arena.available() < Impl::allocationLength(config)) { return kf::none; }
         return kf::some(Impl{arena, config, std::forward<Args>(args)...});
-    }
-};
-
-// TODO: impl ReprTo for Identifier
-struct Identifier {
-
-    kf::StringView name;
-    kf::Option<char> shortcut{name.empty() ? kf::none : kf::some(name[0])};
-
-    [[nodiscard]] constexpr bool match(kf::StringView name_or_shortcut) const noexcept {
-        return (name == name_or_shortcut) or (name_or_shortcut.length() == 1 and shortcut.unwrapOr(0) == name_or_shortcut[0]);
     }
 };
 
@@ -81,7 +71,7 @@ private:
     kf::Stack<T> _items;
 };
 
-template<kf::implements<Identifier> T> struct NamedItemContainer : ItemContainer<T> {
+template<kf::implements<cli::Identifier> T> struct NamedItemContainer : ItemContainer<T> {
     using ItemContainer<T>::ItemContainer;
 
     auto get(kf::StringView name_or_shortcut) noexcept -> kf::Option<T &> {
@@ -96,11 +86,11 @@ template<kf::implements<Identifier> T> struct NamedItemContainer : ItemContainer
 
 template<typename T> struct ValueItem;
 
-template<kf::trivial T> struct ValueItem<T> : Identifier {
+template<kf::trivial T> struct ValueItem<T> : cli::Identifier {
     using ValueType = T;
 
-    constexpr ValueItem(Identifier id, ValueType value) noexcept :
-        Identifier{id}, _value{value} {}
+    constexpr ValueItem(cli::Identifier id, ValueType value) noexcept :
+        cli::Identifier{id}, _value{value} {}
 
     [[nodiscard]] constexpr T value() const noexcept {
         return _value;
@@ -110,11 +100,11 @@ private:
     ValueType _value;
 };
 
-template<> struct ValueItem<kf::StringView> : Identifier {
+template<> struct ValueItem<kf::StringView> : cli::Identifier {
     using ValueType = kf::StringView;
 
-    constexpr ValueItem(Identifier id) noexcept :
-        Identifier{id} {}
+    constexpr ValueItem(cli::Identifier id) noexcept :
+        cli::Identifier{id} {}
 
     [[nodiscard]] constexpr kf::StringView value() const noexcept {
         return this->name;
@@ -202,7 +192,7 @@ struct ConsoleChannel :
     struct Output :
 
         kf::mixin::NonCopyable,
-        kf::mixin::Callbacked<void(kf::StringView)>,// TODO: actually, should not be callbacked. just need consume() -> StringView
+        kf::mixin::Callbacked<void(kf::StringView)>,// TODO: actually, should not be callbacked. just need drain() -> StringView
         kf::mixin::Flush<Output>
 
     {
@@ -260,7 +250,7 @@ private:
 // TODO: make as dyn interface. default getters returns safe mock values.
 struct ConsoleArgument :
 
-    Identifier,
+    cli::Identifier,
     kf::mixin::NonCopyable,
     kf::mixin::Resettable<ConsoleArgument>
 
@@ -278,7 +268,7 @@ struct ConsoleArgument :
         ConsoleChannel::Output &channel_output;
         kf::StringView lexeme;// not empty
 
-        template<kf::implements<Identifier> T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items) const noexcept -> kf::Option<T const &> {
+        template<kf::implements<cli::Identifier> T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items) const noexcept -> kf::Option<T const &> {
             for (auto const &item: items) {// TODO: impl for Slice firstWhere(F: bool(T)) -> Option<T &>
                 if (item.match(lexeme)) {
                     return kf::someRef(item);
@@ -326,7 +316,7 @@ struct ConsoleArgument :
 
     struct EnumItem : ValueItem<kf::usize> {
 
-        constexpr EnumItem(Identifier id, kf::enum_type auto value) noexcept :
+        constexpr EnumItem(cli::Identifier id, kf::enum_type auto value) noexcept :
             ValueItem<kf::usize>{id, static_cast<kf::usize>(value)} {
             static_assert(sizeof(value) <= sizeof(kf::usize));
         }
@@ -443,20 +433,20 @@ struct ConsoleArgument :
 
     // construct
 
-    explicit constexpr ConsoleArgument(Identifier id, EnumParameters params) noexcept :
-        Identifier{id}, _enum{params}, _kind{Kind::Enum} {}
+    explicit constexpr ConsoleArgument(cli::Identifier id, EnumParameters params) noexcept :
+        cli::Identifier{id}, _enum{params}, _kind{Kind::Enum} {}
 
-    explicit constexpr ConsoleArgument(Identifier id, BooleanParameters params) noexcept :
-        Identifier{id}, _boolean{params}, _kind{Kind::Boolean} {}
+    explicit constexpr ConsoleArgument(cli::Identifier id, BooleanParameters params) noexcept :
+        cli::Identifier{id}, _boolean{params}, _kind{Kind::Boolean} {}
 
-    explicit constexpr ConsoleArgument(Identifier id, IntegerParameters params) noexcept :
-        Identifier{id}, _integer{params}, _kind{Kind::Integer} {}
+    explicit constexpr ConsoleArgument(cli::Identifier id, IntegerParameters params) noexcept :
+        cli::Identifier{id}, _integer{params}, _kind{Kind::Integer} {}
 
-    explicit constexpr ConsoleArgument(Identifier id, RealParameters params) noexcept :
-        Identifier{id}, _real{params}, _kind{Kind::Real} {}
+    explicit constexpr ConsoleArgument(cli::Identifier id, RealParameters params) noexcept :
+        cli::Identifier{id}, _real{params}, _kind{Kind::Real} {}
 
-    explicit constexpr ConsoleArgument(Identifier id, StringParameters params) noexcept :
-        Identifier{id}, _string{params}, _kind{Kind::String} {}
+    explicit constexpr ConsoleArgument(cli::Identifier id, StringParameters params) noexcept :
+        cli::Identifier{id}, _string{params}, _kind{Kind::String} {}
 
     // get
 
@@ -545,7 +535,7 @@ private:
 struct ConsoleCommand :
 
     kf::mixin::NonCopyable,
-    Identifier,
+    cli::Identifier,
     CreateWithArenaAndConfig<ConsoleCommand>
 
 {
@@ -579,23 +569,23 @@ struct ConsoleCommand :
     // TODO: check if non-default after default
     // TODO: check for name arg collision
 
-    [[nodiscard]] constexpr bool addEnumArgument(Identifier id, Argument::EnumParameters params) noexcept {
+    [[nodiscard]] constexpr bool addEnumArgument(cli::Identifier id, Argument::EnumParameters params) noexcept {
         return _arguments.write(Argument{id, params});
     }
 
-    [[nodiscard]] constexpr bool addBooleanArgument(Identifier id, Argument::BooleanParameters params) noexcept {
+    [[nodiscard]] constexpr bool addBooleanArgument(cli::Identifier id, Argument::BooleanParameters params) noexcept {
         return _arguments.write(Argument{id, params});
     }
 
-    [[nodiscard]] constexpr bool addIntegerArgument(Identifier id, Argument::IntegerParameters params) noexcept {
+    [[nodiscard]] constexpr bool addIntegerArgument(cli::Identifier id, Argument::IntegerParameters params) noexcept {
         return _arguments.write(Argument{id, params});
     }
 
-    [[nodiscard]] constexpr bool addRealArgument(Identifier id, Argument::RealParameters params) noexcept {
+    [[nodiscard]] constexpr bool addRealArgument(cli::Identifier id, Argument::RealParameters params) noexcept {
         return _arguments.write(Argument{id, params});
     }
 
-    [[nodiscard]] constexpr bool addStringArgument(Identifier id, Argument::StringParameters params) noexcept {
+    [[nodiscard]] constexpr bool addStringArgument(cli::Identifier id, Argument::StringParameters params) noexcept {
         return _arguments.write(Argument{id, params});
     }
 
@@ -610,8 +600,8 @@ private:
     kf::Function<void(Context const &)> _handler;
 
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleCommand>;
-    explicit constexpr ConsoleCommand(kf::Arena &arena, cli::Config const &config, Identifier id, auto &&handler) noexcept :
-        Identifier{id},
+    explicit constexpr ConsoleCommand(kf::Arena &arena, cli::Config const &config, cli::Identifier id, auto &&handler) noexcept :
+        cli::Identifier{id},
         _arguments{arena.allocate<Argument>(config.max_command_argument_count)},
         _handler{std::forward<decltype(handler)>(handler)} {}
 
@@ -624,7 +614,7 @@ struct ConsoleNamespace :
 
     kf::mixin::NonCopyable,
     kf::mixin::Configured<cli::Config>,
-    Identifier,
+    cli::Identifier,
     CreateWithArenaAndConfig<ConsoleNamespace>,
     private NamedItemContainer<ConsoleCommand>
 
@@ -634,15 +624,15 @@ struct ConsoleNamespace :
         return this->get(name_or_shortcut);
     }
 
-    [[nodiscard]] auto addCommand(kf::Arena &arena, Identifier id, auto &&handler) noexcept {
+    [[nodiscard]] auto addCommand(kf::Arena &arena, cli::Identifier id, auto &&handler) noexcept {
         return this->add(arena, this->config(), std::move(id), std::forward<decltype(handler)>(handler));
     }
 
 private:
     friend struct ::botix::internal::CreateWithArenaAndConfig<ConsoleNamespace>;
-    explicit constexpr ConsoleNamespace(kf::Arena &arena, cli::Config const &config, Identifier id) noexcept :
+    explicit constexpr ConsoleNamespace(kf::Arena &arena, cli::Config const &config, cli::Identifier id) noexcept :
         kf::mixin::Configured<cli::Config>{config},
-        Identifier{id},
+        cli::Identifier{id},
         NamedItemContainer<ConsoleCommand>{arena, config.max_command_count} {}
 
     static constexpr auto allocationLength(cli::Config const &config) noexcept {
@@ -650,6 +640,7 @@ private:
     }
 };
 
+// TODO: make as structs, move methods here.
 using ConsoleChannelContainer = ItemContainer<ConsoleChannel>;
 
 using ConsoleNamespaceContainer = NamedItemContainer<ConsoleNamespace>;
@@ -705,13 +696,14 @@ struct Console final :
         return internal::ConsoleNamespaceContainer::get(name_or_shortcut);
     }
 
-    [[nodiscard]] decltype(auto) addNamespace(kf::Arena &arena, internal::Identifier id) {
+    [[nodiscard]] decltype(auto) addNamespace(kf::Arena &arena, Identifier id) {
         return internal::ConsoleNamespaceContainer::add(arena, this->config(), id);
     }
 
 private:
     kf::Logger _logger{"Console"};
 
+    // TODO: make public
     [[nodiscard]] auto resolveCommand(kf::StringView lexeme) noexcept -> kf::Option<Command &> {
         auto const maybe_delimeter_index = lexeme.indexOf('.');
 
@@ -796,7 +788,7 @@ private:
                     break;
 
                 case Channel::Input::Status::HintRequested:
-                    _logger.debug("hint: '{}'", channel.input.peekLine());// TODO: parse, suggestion depends on it.
+                    _logger.debug("hint: '{}'", channel.input.peekLine());// TODO: parse, suggestion depends on input
                     break;
 
                 case Channel::Input::Status::LineReady:
