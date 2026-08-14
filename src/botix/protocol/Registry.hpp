@@ -4,8 +4,8 @@
 #pragma once
 
 #include <kf/mixin/Configured.hpp>
+#include <kf/mixin/DefaultResettable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/Resettable.hpp>
 
 #include "botix/protocol/Kind.hpp"
 #include "botix/protocol/MavlinkProtocol.hpp"
@@ -14,15 +14,9 @@
 
 namespace botix::internal {
 
-struct ProtocolRegistryConfig : kf::mixin::Resettable<ProtocolRegistryConfig> {
+struct ProtocolRegistryConfig : kf::mixin::DefaultResettable<ProtocolRegistryConfig> {
 
-    protocol::MavlinkProtocol::Config mavlink;
-
-private:
-    KF_IMPL_RESETTABLE(ProtocolRegistryConfig);
-    constexpr void resetImpl() noexcept {
-        mavlink.reset();
-    }
+    protocol::MavlinkProtocol::Config mavlink{};
 };
 
 }// namespace botix::internal

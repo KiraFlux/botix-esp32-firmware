@@ -6,9 +6,9 @@
 #include <kf/Bytes.hpp>
 #include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
-#include <kf/primitives.hpp>
+#include <kf/core.hpp>
 
-#include <kf/mixin/Resettable.hpp>
+#include <kf/mixin/DefaultResettable.hpp>
 
 namespace botix::config {
 
@@ -18,12 +18,12 @@ struct ConfigTag {};
 template<typename Impl, auto V> struct Config :
 
     ConfigTag,
-    kf::mixin::Resettable<Impl>
+    kf::mixin::DefaultResettable<Impl>
 
 {
     static constexpr kf::u8 latest_version{V};
 
-    kf::u8 version;
+    kf::u8 version{latest_version};
 
     [[nodiscard]] static constexpr auto fromBytes(kf::Bytes bytes) noexcept -> kf::Option<Impl &> {
         return (bytes.length() == sizeof(Impl)) ? kf::someRef(*reinterpret_cast<Impl *>(bytes.data())) : kf::none;

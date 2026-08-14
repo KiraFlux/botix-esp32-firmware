@@ -10,9 +10,9 @@
 #include <kf/driver/actuator/PwmPositionServo.hpp>
 #include <kf/driver/sensor/QuadratureEncoder.hpp>
 
+#include <kf/mixin/DefaultResettable.hpp>
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/Resettable.hpp>
 
 namespace botix {
 
@@ -36,41 +36,35 @@ struct Periphery :
     using WheelOdometerEncoder = kf::driver::sensor::QuadratureEncoder<kf::units::Millimeters>;
 
     /// @brief Configuration aggregate for all hardware peripherals of the Botix robot
-    struct Config : kf::mixin::Resettable<Config> {
+    struct Config : kf::mixin::DefaultResettable<Config> {
 
         // actuators
 
-        MotorDriver::Config motor_driver;
+        MotorDriver::Config motor_driver{
+            .pwm{
+                .frequency_hz = 20000,
+                .resolution_bits = 8,
+            },
+            .max_input = 1000,
+            .duty_dead_zone = 10,
+        };
 
-        PwmServo::Config servo;
+        PwmServo::Config servo{
+            .angle_range{.start = 0, .end = 180},
+            .pulse_range{.start = 500, .end = 2500},
+            // TODO: move up
+            .pwm{
+                .frequency_hz = 50,
+                .resolution_bits = 12,
+            },
+        };
 
         // sensors
 
-        WheelOdometerEncoder::Config wheel_odometry_encoder;
-
-    private:
-        KF_IMPL_RESETTABLE(Config);
-        constexpr void resetImpl() noexcept {
-
-            // actuators
-
-            motor_driver.max_input = 1000;
-            motor_driver.duty_dead_zone = 10;
-            motor_driver.pwm.frequency_hz = 20000;
-            motor_driver.pwm.resolution_bits = 8;
-
-            servo.angle_range.start = 0;
-            servo.angle_range.end = 180;
-            servo.pulse_range.start = 500;
-            servo.pulse_range.end = 2500;
-            servo.pwm.frequency_hz = 50,
-            servo.pwm.resolution_bits = 12;
-
-            // sensors
-
-            wheel_odometry_encoder.units_per_tick = 1;
-            wheel_odometry_encoder.pull = kf::gpio::DigitalInput::Pull::External;
-        }
+        WheelOdometerEncoder::Config wheel_odometry_encoder{
+            .units_per_tick = 1,
+            .pull = kf::gpio::DigitalInput::Pull::External,
+        };
     };
 
     explicit constexpr Periphery(Config const &config) noexcept :
@@ -105,10 +99,7 @@ struct Periphery :
         config.servo,
         kf::gpio::G14,
         // safe range
-        PwmServo::Config::AngleRange{
-            .start = 135,
-            .end = 180,
-        },
+        PwmServo::Config::AngleRange{.start = 135, .end = 180},
     };
 
     // sensors

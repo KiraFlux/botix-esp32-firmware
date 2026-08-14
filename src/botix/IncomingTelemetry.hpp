@@ -3,8 +3,7 @@
 
 #pragma once
 
-#include <kf/concepts.hpp>
-#include <kf/primitives.hpp>
+#include <kf/core.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/NonCopyable.hpp>

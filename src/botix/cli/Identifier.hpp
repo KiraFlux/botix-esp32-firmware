@@ -6,15 +6,23 @@
 #include <kf/Option.hpp>
 #include <kf/StringView.hpp>
 
+#include <kf/mixin/Match.hpp>
+
 namespace botix::cli {
 
 // TODO: impl ReprTo for Identifier
-struct Identifier {
+struct Identifier :
+
+    kf::mixin::Match<Identifier, kf::StringView>
+
+{
 
     kf::StringView name;
     kf::Option<char> shortcut{name.empty() ? kf::none : kf::some(name[0])};
 
-    [[nodiscard]] constexpr bool match(kf::StringView name_or_shortcut) const noexcept {
+private:
+    KF_IMPL_MATCH(Identifier, kf::StringView);
+    constexpr bool matchImpl(kf::StringView name_or_shortcut) const noexcept {
         return (name == name_or_shortcut) or (name_or_shortcut.length() == 1 and shortcut.unwrapOr(0) == name_or_shortcut[0]);
     }
 };

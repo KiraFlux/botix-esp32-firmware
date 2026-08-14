@@ -3,13 +3,13 @@
 
 #pragma once
 
-#include <kf/primitives.hpp>
+#include <kf/core.hpp>
 
-#include <kf/mixin/Resettable.hpp>
+#include <kf/mixin/DefaultResettable.hpp>
 
 namespace botix::cli {
 
-struct Config : kf::mixin::Resettable<Config> {
+struct Config : kf::mixin::DefaultResettable<Config> {
 
     kf::u8
         max_channel_count{0x08},
@@ -20,14 +20,7 @@ struct Config : kf::mixin::Resettable<Config> {
     kf::u16
         channel_input_queue_length{0x02'00},
         channel_input_line_length{0x00'80},
-        channel_output_line_length{0x00'80};
-
-private:
-    // TODO: extract as mixin::DefaultConstructResettable<Impl>
-    KF_IMPL_RESETTABLE(Config);
-    constexpr void resetImpl() noexcept {
-        *this = Config{};
-    }
+        channel_output_line_length{0x02'00};
 };
 
 }

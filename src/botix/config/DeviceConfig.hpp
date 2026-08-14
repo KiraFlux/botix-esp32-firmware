@@ -14,23 +14,13 @@ namespace botix::config {
 
 struct DeviceConfig : Config<DeviceConfig, 0> {
 
-    Periphery::Config periphery;
+    Periphery::Config periphery{};
 
-    OutgoingTelemetry::Config outgoing_telemetry;
+    OutgoingTelemetry::Config outgoing_telemetry{};
 
-    protocol::Registry::Config protocol_registry;
+    protocol::Registry::Config protocol_registry{};
 
-    service::MixerService::Config mixer_service;
-
-private:
-    KF_IMPL_RESETTABLE(DeviceConfig);
-    constexpr void resetImpl() noexcept {
-        version = DeviceConfig::latest_version;
-        periphery.reset();
-        outgoing_telemetry.reset();
-        protocol_registry.reset();
-        mixer_service.reset();
-    }
+    service::MixerService::Config mixer_service{};
 };
 
-}// namespace botix
+}// namespace botix::config

@@ -12,16 +12,8 @@ namespace botix::config {
 
 struct UserConfig : Config<UserConfig, 0> {
 
-    transport::Kind init_transport_kind;
-    protocol::Kind init_protocol_kind;
-
-private:
-    KF_IMPL_RESETTABLE(UserConfig);
-    constexpr void resetImpl() noexcept {
-        version = UserConfig::latest_version;
-        init_transport_kind = transport::Kind::Espnow;
-        init_protocol_kind = protocol::Kind::Mavlink;
-    }
+    transport::Kind init_transport_kind{transport::Kind::Espnow};
+    protocol::Kind init_protocol_kind{protocol::Kind::Mavlink};
 };
 
-}// namespace botix
+}// namespace botix::config

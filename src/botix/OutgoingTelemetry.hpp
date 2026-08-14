@@ -4,45 +4,30 @@
 #pragma once
 
 #include <kf/Timer.hpp>
-#include <kf/concepts.hpp>
-#include <kf/primitives.hpp>
+#include <kf/core.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/Callbacked.hpp>
 #include <kf/mixin/Configured.hpp>
+#include <kf/mixin/DefaultResettable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/Resettable.hpp>
 #include <kf/mixin/TimedPollable.hpp>
 
 namespace botix {
 
 namespace internal {
 
-struct OutgoingTelemetryTopicConfig : kf::mixin::Resettable<OutgoingTelemetryTopicConfig> {
+struct OutgoingTelemetryTopicConfig : kf::mixin::DefaultResettable<OutgoingTelemetryTopicConfig> {
 
-    kf::Timer::Config timer;
-    kf::u32 update_ahead_ms;
-    bool enabled;
-
-private:
-    KF_IMPL_RESETTABLE(OutgoingTelemetryTopicConfig);
-    constexpr void resetImpl() noexcept {
-        timer.value = 100;
-        update_ahead_ms = 10;
-        enabled = true;
-    }
+    kf::Timer::Config timer{.value = 100};
+    kf::u32 update_ahead_ms{10};
+    bool enabled{true};
 };
 
-struct OutgoingTelemetryConfig : kf::mixin::Resettable<OutgoingTelemetryConfig> {
+struct OutgoingTelemetryConfig : kf::mixin::DefaultResettable<OutgoingTelemetryConfig> {
 
     OutgoingTelemetryTopicConfig
-        wheel_distance;
-
-private:
-    KF_IMPL_RESETTABLE(OutgoingTelemetryConfig);
-    constexpr void resetImpl() noexcept {
-        wheel_distance.reset();
-    }
+        wheel_distance{};
 };
 
 }// namespace internal

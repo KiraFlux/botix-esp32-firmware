@@ -8,8 +8,7 @@
 #include <kf/BytesView.hpp>
 #include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
-#include <kf/concepts.hpp>
-#include <kf/primitives.hpp>
+#include <kf/core.hpp>
 
 #include <kf/mixin/BinaryWritable.hpp>
 #include <kf/mixin/NonCopyable.hpp>

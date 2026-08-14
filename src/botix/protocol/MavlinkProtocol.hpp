@@ -7,11 +7,12 @@
 
 #include <kf/BytesView.hpp>
 #include <kf/Timer.hpp>
-#include <kf/primitives.hpp>
+#include <kf/core.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/Callbacked.hpp>
 #include <kf/mixin/Configured.hpp>
+#include <kf/mixin/DefaultResettable.hpp>
 
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/transport/Address.hpp"
@@ -22,35 +23,23 @@
 namespace botix::internal {
 
 /// @brief Configuration for the MAVLink protocol
-struct MavlinkProtocolConfig : kf::mixin::Resettable<MavlinkProtocolConfig> {
+struct MavlinkProtocolConfig : kf::mixin::DefaultResettable<MavlinkProtocolConfig> {
 
     /// @brief Timer for HEARTBEAT messages (ms)
-    kf::Timer::Config heartbeat_timer;
+    kf::Timer::Config heartbeat_timer{.value = 2'000};
 
     kf::u8
 
         /// @brief MAVLink system ID of this controller
-        system_id_self,
+        system_id_self{0x01},
 
         /// @brief MAVLink system ID of the target drone (0 = broadcast)
-        system_id_target,
+        system_id_target{0x7F},
 
         // components
 
-        component_id_heartbeat,
-        component_id_wheel_distance;
-
-private:
-    KF_IMPL_RESETTABLE(MavlinkProtocolConfig);
-    void resetImpl() noexcept {
-        heartbeat_timer.value = 2'000;// ms
-
-        system_id_self = 0x01;
-        system_id_target = 0x7f;
-
-        component_id_heartbeat = MAV_COMP_ID_USER1;
-        component_id_wheel_distance = MAV_COMP_ID_USER2;
-    }
+        component_id_heartbeat{MAV_COMP_ID_USER1},
+        component_id_wheel_distance{MAV_COMP_ID_USER2};
 };
 
 }// namespace botix::internal
