@@ -20,7 +20,8 @@ struct Config : kf::mixin::DefaultResettable<Config> {
     kf::u16
         channel_input_queue_length{0x02'00},
         channel_input_line_length{0x00'80},
-        channel_output_line_length{0x02'00};
+        channel_output_line_length{0x02'00},
+        help_command_description_position{60};
 };
 
-}
+}// namespace botix::cli

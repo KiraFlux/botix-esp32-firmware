@@ -6,13 +6,12 @@
 #include <algorithm>
 
 #include <kf/BytesView.hpp>
-#include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
 #include <kf/core.hpp>
 
 #include <kf/mixin/BinaryWritable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/TimedPollable.hpp>
+#include <kf/mixin/Poll.hpp>
 
 #include "botix/transport/Address.hpp"
 #include "botix/transport/Transport.hpp"
@@ -22,7 +21,7 @@ namespace botix::transport {
 struct Link final :
 
     kf::mixin::NonCopyable,
-    kf::mixin::TimedPollable<Link>,
+    kf::mixin::Poll<Link>,
     kf::mixin::BinaryWritable<Link, bool>
 
 {
@@ -67,7 +66,7 @@ struct Link final :
 private:
     kf::Option<Transport &> _transport{kf::none};
 
-    KF_IMPL_TIMED_POLLABLE(Self);
+    KF_IMPL_POLL(Self);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         if (_transport.isNone()) {
             return;

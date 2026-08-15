@@ -142,7 +142,7 @@ private:
         return _logger.key().data();
     }
 
-    KF_IMPL_TIMED_POLLABLE(ConfigService);
+    KF_IMPL_POLL(ConfigService);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         if (_sync_timer.expired(now)) {
             _sync_timer.start(now);

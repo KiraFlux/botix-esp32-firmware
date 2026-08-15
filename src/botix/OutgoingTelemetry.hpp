@@ -11,7 +11,7 @@
 #include <kf/mixin/Configured.hpp>
 #include <kf/mixin/DefaultResettable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/TimedPollable.hpp>
+#include <kf/mixin/Poll.hpp>
 
 namespace botix {
 
@@ -35,14 +35,14 @@ struct OutgoingTelemetryConfig : kf::mixin::DefaultResettable<OutgoingTelemetryC
 struct OutgoingTelemetry :
 
     kf::mixin::NonCopyable,
-    kf::mixin::TimedPollable<OutgoingTelemetry>,
+    kf::mixin::Poll<OutgoingTelemetry>,
     kf::mixin::Configured<internal::OutgoingTelemetryConfig>
 
 {
     template<kf::trivial T> struct Topic :
 
         kf::mixin::NonCopyable,
-        kf::mixin::TimedPollable<Topic<T>>,
+        kf::mixin::Poll<Topic<T>>,
         kf::mixin::Callbacked<T()>,
         kf::mixin::Configured<internal::OutgoingTelemetryTopicConfig>
 
@@ -72,7 +72,7 @@ struct OutgoingTelemetry :
         kf::Timer _timer{this->config().timer};
         T _value{};
 
-        KF_IMPL_TIMED_POLLABLE(Topic<T>);
+        KF_IMPL_POLL(Topic<T>);
         void pollImpl(kf::units::Milliseconds now) noexcept {
             if (not this->config().enabled or (_timer.remaining(now) >= this->config().update_ahead_ms)) {
                 return;
@@ -95,7 +95,7 @@ struct OutgoingTelemetry :
     Topic<WheelDistance> wheel_distance{this->config().wheel_distance};
 
 private:
-    KF_IMPL_TIMED_POLLABLE(OutgoingTelemetry);
+    KF_IMPL_POLL(OutgoingTelemetry);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         wheel_distance.poll(now);
     }

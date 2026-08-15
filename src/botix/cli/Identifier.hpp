@@ -10,14 +10,13 @@
 
 namespace botix::cli {
 
-// TODO: impl ReprTo for Identifier
 struct Identifier :
 
     kf::mixin::Match<Identifier, kf::StringView>
 
 {
 
-    kf::StringView name;
+    kf::StringView name, description{};
     kf::Option<char> shortcut{name.empty() ? kf::none : kf::some(name[0])};
 
 private:

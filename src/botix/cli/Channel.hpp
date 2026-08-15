@@ -105,31 +105,31 @@ struct Channel :
     {
 
         explicit constexpr Output(kf::Slice<char> buffer) noexcept :
-            _output_string{buffer} {}
+            string{buffer} {}
 
         template<typename... Args> void error(kf::internal::FormatString<Args...> const &fmt, Args const &...args) noexcept {
-            _output_string.append("error: ");
+            (void) string.append("error: ");
             print(fmt, args...);
         }
 
         template<typename... Args> void print(kf::internal::FormatString<Args...> const &fmt, Args const &...args) noexcept {
-            _output_string.format(fmt, args...);
-            (void) _output_string.write('\n');
+            (void) string.appendFormat(fmt, args...);
+            (void) string.write('\n');
         }
 
-    private:
-        kf::String _output_string;
+        kf::String string;
 
+    private:
         KF_IMPL_READ_AVAILABLE(Output);
         kf::usize availableForReadImpl() const noexcept {
-            return _output_string.availableForRead();
+            return string.availableForRead();
         }
 
         KF_IMPL_DRAIN(Output, kf::StringView);
         constexpr kf::StringView drainImpl() noexcept {
-            auto const output = _output_string.view();
-            _output_string.reset();// just pointer got moved, no string modification
-            return output;         // still valid
+            auto const output = string.view();
+            string.reset();// just pointer got moved, no string modification
+            return output; // still valid
         }
     };
 

@@ -5,7 +5,7 @@
 
 #include <kf/mixin/Initable.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/TimedPollable.hpp>
+#include <kf/mixin/Poll.hpp>
 
 namespace botix::system {
 
@@ -16,7 +16,7 @@ template<typename Impl, typename InitSignature> struct System :
     SystemTag,
     kf::mixin::NonCopyable,
     kf::mixin::Initable<Impl, InitSignature>,
-    kf::mixin::TimedPollable<Impl>
+    kf::mixin::Poll<Impl>
 
 {};
 
@@ -24,4 +24,4 @@ template<typename Impl, typename InitSignature> struct System :
 
 #define BOTIX_IMPL_SYSTEM(__impl__, ...)     \
     KF_IMPL_INITABLE(__impl__, __VA_ARGS__); \
-    KF_IMPL_TIMED_POLLABLE(__impl__)
+    KF_IMPL_POLL(__impl__)

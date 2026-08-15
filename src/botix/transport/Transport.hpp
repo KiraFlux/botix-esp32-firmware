@@ -4,8 +4,8 @@
 #pragma once
 
 #include <kf/BytesView.hpp>
-#include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
+#include <kf/core.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/NonCopyable.hpp>

@@ -4,7 +4,7 @@
 #pragma once
 
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/TimedPollable.hpp>
+#include <kf/mixin/Poll.hpp>
 
 namespace botix::service {
 
@@ -14,10 +14,10 @@ template<typename Impl> struct Service :
 
     ServiceTag,
     kf::mixin::NonCopyable,
-    kf::mixin::TimedPollable<Impl>
+    kf::mixin::Poll<Impl>
 
 {};
 
 }// namespace botix::service
 
-#define BOTIX_IMPL_SERVICE(...) KF_IMPL_TIMED_POLLABLE(__VA_ARGS__)
+#define BOTIX_IMPL_SERVICE(...) KF_IMPL_POLL(__VA_ARGS__)

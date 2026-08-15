@@ -8,9 +8,9 @@
 #include <kf/BytesView.hpp>
 #include <kf/Logger.hpp>
 #include <kf/MacAddress.hpp>
-#include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
 #include <kf/Timer.hpp>
+#include <kf/core.hpp>
 #include <kf/esp/Espnow.hpp>
 
 #include <kf/mixin/Initable.hpp>

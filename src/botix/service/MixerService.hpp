@@ -11,7 +11,6 @@
 #include <kf/mixin/DefaultResettable.hpp>
 
 #include "botix/IncomingTelemetry.hpp"
-#include "botix/Periphery.hpp"
 
 #include "botix/service/Service.hpp"
 

@@ -50,13 +50,12 @@ struct Periphery :
         };
 
         PwmServo::Config servo{
-            .angle_range{.start = 0, .end = 180},
-            .pulse_range{.start = 500, .end = 2500},
-            // TODO: move up
             .pwm{
                 .frequency_hz = 50,
                 .resolution_bits = 12,
             },
+            .angle_range{.start = 0, .end = 180},
+            .pulse_range{.start = 500, .end = 2500},
         };
 
         // sensors

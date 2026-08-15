@@ -184,7 +184,7 @@ Here, the `while` condition ensures that `read()` will always succeed, so `unwra
 
 - Use the mixins provided by the Toolkit (`kf/mixin/`):
   - `Initable<Impl, Signature>` - for objects that require initialization.
-  - `TimedPollable<Impl>` - for periodic tasks that receive a timestamp.
+  - `Poll<Impl>` - for periodic tasks that receive a timestamp.
   - `Configured<Config>` - for objects that hold a configuration reference.
   - `Callbacked<Signature>` - for optional callbacks.
   - `Resettable<Impl>` - for resettable state.
@@ -290,7 +290,7 @@ To keep reviews concise and objective, we use a numbered rule system. When you s
 | **V302** | Custom Mixin Duplicate         | P2       | Implementing behavior already provided by Toolkit mixins (`Callbacked`, `Resettable`).                                | Created `Sink` instead of `Callbacked`. Fixed: inherit from `Callbacked`.                                            |
 | **V303** | Wrong Error‑Handling Mechanism | P1       | Using a custom enum with `Ok` or using `Result` where `bool` or `Option` would suffice - or vice versa.               | `SetStatus` with `Ok` when only success/failure matters. Fixed: used `bool` or `Result<void, Error>` as appropriate. |
 | **V304** | Wrong Smart Pointer / Optional | P2       | Using `std::optional`, `std::variant`, or `std::unique_ptr` instead of `kf::Option`, `kf::Result`, or `kf::Function`. | Used `std::optional`. Fixed: `kf::Option`.                                                                           |
-| **V305** | Missing Mixin Usage            | P2       | Type does not use an appropriate mixin (`Configured`, `Initable`, `TimedPollable`).                                   | Class with config did not use `Configured`. Fixed: added mixin.                                                      |
+| **V305** | Missing Mixin Usage            | P2       | Type does not use an appropriate mixin (`Configured`, `Initable`, `Poll`).                                            | Class with config did not use `Configured`. Fixed: added mixin.                                                      |
 
 ---
 

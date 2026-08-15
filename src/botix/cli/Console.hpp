@@ -5,7 +5,6 @@
 
 #include <kf/Arena.hpp>
 #include <kf/Logger.hpp>
-#include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
 #include <kf/Registry.hpp>
 #include <kf/StringView.hpp>
@@ -15,7 +14,7 @@
 #include <kf/mixin/Configured.hpp>
 #include <kf/mixin/ExtraAllocationLength.hpp>
 #include <kf/mixin/NonCopyable.hpp>
-#include <kf/mixin/TimedPollable.hpp>
+#include <kf/mixin/Poll.hpp>
 
 #include "botix/cli/Channel.hpp"
 #include "botix/cli/Config.hpp"
@@ -24,11 +23,11 @@
 
 namespace botix::internal {
 
-using ChannelContainerBase = kf::Registry<cli::Channel>;
+using ChannelRegistryBase = kf::Registry<cli::Channel>;
 
-template<typename Impl> struct ChannelContainer : private ChannelContainerBase {
+template<typename Impl> struct ChannelRegistry : private ChannelRegistryBase {
 
-    using ChannelContainerBase::ChannelContainerBase;
+    using ChannelRegistryBase::ChannelRegistryBase;
 
     [[nodiscard]] decltype(auto) channels() noexcept {
         return this->items();
@@ -43,13 +42,56 @@ template<typename Impl> struct ChannelContainer : private ChannelContainerBase {
     }
 };
 
-using ConsoleNamespaceContainerBase = kf::Registry<cli::Namespace>;
+using ConsoleNamespaceRegistryBase = kf::Registry<cli::Namespace>;
 
-template<typename Impl> struct ConsoleNamespaceContainer : private ConsoleNamespaceContainerBase {
+template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespaceRegistryBase {
 
-    explicit ConsoleNamespaceContainer(kf::Arena &arena, kf::usize max_namespace_count) noexcept :
-        ConsoleNamespaceContainerBase{arena, max_namespace_count} {
-        (void) this->addNamespace(arena, {.name = "global", .shortcut = kf::none});// caller ensure
+    explicit ConsoleNamespaceRegistry(kf::Arena &arena, kf::usize max_namespace_count) noexcept :
+        ConsoleNamespaceRegistryBase{arena, max_namespace_count} {
+        // caller ensure
+        (void) this->addNamespace(
+            arena,
+            {
+                .name{"global"},
+                .description{"common commands"},
+                .shortcut{kf::none},
+            });
+
+        auto should_be_command = this->globalNamespace().addCommand(
+            arena,
+            {
+                .name{"help"},
+                .description{"show help about command or namespace"},
+            },
+            [this](cli::Command::Context const &context) -> void {
+                auto &output = context.channel.output;
+                auto const target = context.arguments[0]->string();
+
+                if (auto const &maybe_command = this->resolveCommand(target); maybe_command.isSome()) {
+                    writeCommandHelp(output.string, maybe_command.unwrap(), false);
+                    return;
+                }
+
+                if (auto const &maybe_namespace = this->getNamespace(target); maybe_namespace.isSome()) {
+                    writeNamespaceHelp(output.string, maybe_namespace.unwrap());
+                    return;
+                }
+
+                if (not target.empty()) {
+                    output.error("'{}' is not a valid namespace or command.", target);
+                }
+
+                for (auto const ns: this->namespaces()) {
+                    writeNamespaceHelp(output.string, *ns);
+                }
+            });
+
+        (void) should_be_command.unwrap().addStringArgument(
+            arena,
+            {.name = "target"},
+            {
+                .params{.default_value{""}},
+            });
     }
 
     [[nodiscard]] decltype(auto) namespaces() noexcept {
@@ -79,6 +121,74 @@ template<typename Impl> struct ConsoleNamespaceContainer : private ConsoleNamesp
     [[nodiscard]] decltype(auto) addNamespace(kf::Arena &arena, cli::Identifier id) {
         return this->add(arena, static_cast<Impl const *>(this)->config(), id);
     }
+
+    [[nodiscard]] auto resolveCommand(kf::StringView path) noexcept -> kf::Option<cli::Command &> {
+        auto const maybe_delimeter_index = path.indexOf('.');
+
+        if (maybe_delimeter_index.isNone()) {
+            return globalNamespace().getCommand(path);
+        }
+
+        auto const delimeter_index = maybe_delimeter_index.unwrap();
+
+        auto maybe_namespace = getNamespace(path.first(delimeter_index));
+        if (maybe_namespace.isNone()) { return kf::none; }
+
+        return maybe_namespace.unwrap().getCommand(path.fromOffset(delimeter_index + 1));
+    }
+
+protected:
+    void writeCommandHelp(auto &char_writable, cli::Command const &command, bool inline_description) const noexcept {
+        if (not inline_description) {
+            (void) char_writable.append("\nCommand:\n  ");
+            (void) char_writable.append(command.name);
+
+            if (command.shortcut.isSome()) {
+                (void) char_writable.append('/');
+                (void) char_writable.append(command.shortcut.unwrap());
+            }
+
+            if (not command.description.empty()) {
+                (void) char_writable.append(" - ");
+                (void) char_writable.append(command.description);
+            }
+
+            (void) char_writable.append("\nUsage:\n  ");
+        }
+
+        auto const write_length = char_writable.append(command);
+
+        if (inline_description and not command.description.empty()) {
+            for (int i = static_cast<Impl const *>(this)->config().help_command_description_position; i > write_length; i -= 1) {
+                (void) char_writable.append(' ');
+            }
+            (void) char_writable.append(" - ");
+            (void) char_writable.append(command.description);
+        }
+        (void) char_writable.append('\n');
+    }
+
+    void writeNamespaceHelp(auto &char_writable, cli::Namespace const &space) const noexcept {
+        (void) char_writable.append("\nNamespace:\n  ");
+        (void) char_writable.append(space.name);
+
+        if (space.shortcut.isSome()) {
+            (void) char_writable.append('/');
+            (void) char_writable.append(space.shortcut.unwrap());
+        }
+
+        if (not space.description.empty()) {
+            (void) char_writable.append(" - ");
+            (void) char_writable.append(space.description);
+        }
+
+        (void) char_writable.append("\nCommands:\n");
+
+        for (auto const c: space.commands()) {
+            (void) char_writable.appendFormat("  {}.", space.name);
+            writeCommandHelp(char_writable, *c, true);
+        }
+    }
 };
 
 }// namespace botix::internal
@@ -88,35 +198,18 @@ namespace botix::cli {
 struct Console final :
 
     kf::mixin::Configured<Config>,
-    kf::mixin::TimedPollable<Console>,
-    kf::mixin::ExtraAllocationLength<Console>,
-    internal::ChannelContainer<Console>,
-    internal::ConsoleNamespaceContainer<Console>
+    internal::ChannelRegistry<Console>,
+    internal::ConsoleNamespaceRegistry<Console>,
+    kf::mixin::NonCopyable,
+    kf::mixin::Poll<Console>,
+    kf::mixin::ExtraAllocationLength<Console>
 
 {
 
     explicit Console(kf::Arena &arena, Config const &config) noexcept :
         kf::mixin::Configured<Config>{config},
-        internal::ChannelContainer<Console>{arena, config.max_channel_count},
-        internal::ConsoleNamespaceContainer<Console>{arena, config.max_namespace_count} {
-
-        // TODO: register help command
-    }
-
-    [[nodiscard]] auto resolveCommand(kf::StringView path) noexcept -> kf::Option<Command &> {
-        auto const maybe_delimeter_index = path.indexOf('.');
-
-        if (maybe_delimeter_index.isNone()) {
-            return globalNamespace().getCommand(path);
-        }
-
-        auto const delimeter_index = maybe_delimeter_index.unwrap();
-
-        auto namespace_ = getNamespace(path.first(delimeter_index));
-        if (namespace_.isNone()) { return kf::none; }
-
-        return namespace_.unwrap().getCommand(path.fromOffset(delimeter_index + 1));
-    }
+        internal::ChannelRegistry<Console>{arena, config.max_channel_count},
+        internal::ConsoleNamespaceRegistry<Console>{arena, config.max_namespace_count} {}
 
 private:
     kf::Logger _logger{"Console"};
@@ -135,7 +228,7 @@ private:
         }
 
         auto const name = tokens[0];
-        auto maybe_command = resolveCommand(name);
+        auto maybe_command = this->resolveCommand(name);
 
         if (maybe_command.isNone()) {
             channel_context.output.error("unknown command: {}", name);
@@ -144,9 +237,10 @@ private:
 
         auto &command = maybe_command.unwrap();
         auto argument_tokens = tokens.fromOffset(1);
-
+        // TODO: move to Command
         if (argument_tokens.length() < command.positionalArgumentsCount() or argument_tokens.length() > command.arguments().length()) {
             channel_context.output.error("expected {}..{} arguments, got {}", command.positionalArgumentsCount(), command.arguments().length(), argument_tokens.length());
+            this->writeCommandHelp(channel_context.output.string, command, false);
             return;
         }
 
@@ -154,11 +248,11 @@ private:
         bool parse_failed = false;
         while (argument_index < argument_tokens.length()) {
             auto lexeme = argument_tokens[argument_index];
-            auto &argument = command.arguments()[argument_index];
+            auto argument = command.arguments()[argument_index];
 
-            if (not argument.parse({.channel_output = channel_context.output, .lexeme = lexeme})) {
+            if (not argument->parse({.channel_output = channel_context.output, .lexeme = lexeme})) {
                 parse_failed = true;
-                channel_context.output.print("note: failed argument '{}'", argument.name);
+                channel_context.output.print("note: failed argument '{}'", argument->name);
             }
 
             argument_index += 1;
@@ -166,21 +260,19 @@ private:
 
         if (parse_failed) {
             channel_context.output.error("failed to parse positional argument(s)");
+            this->writeCommandHelp(channel_context.output.string, command, false);
             return;
         }
 
         auto default_value_arguments = command.arguments().fromOffset(argument_index);
-        for (auto &a: default_value_arguments) {
-            a.reset();
+        for (auto a: default_value_arguments) {
+            a->reset();
         }
 
-        command.execute({
-            .channel = channel_context,
-            .arguments = command.arguments(),
-        });
+        command.execute(channel_context);
     }
 
-    KF_IMPL_TIMED_POLLABLE(Console);
+    KF_IMPL_POLL(Console);
     void pollImpl(kf::units::Milliseconds now) noexcept {
         for (kf::u8 channel_num = 0; channel_num < this->channels().length(); channel_num += 1) {
             auto &channel = *this->channels()[channel_num];

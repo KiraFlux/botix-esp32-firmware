@@ -9,6 +9,7 @@
 #include <kf/core.hpp>
 
 #include <kf/mixin/NonCopyable.hpp>
+#include <kf/mixin/ReprTo.hpp>
 #include <kf/mixin/Resettable.hpp>
 
 #include "botix/cli/Channel.hpp"
@@ -18,11 +19,24 @@ namespace botix::internal {
 
 template<typename T> struct ValueItem;
 
-template<kf::trivial T> struct ValueItem<T> : cli::Identifier {
+template<typename T> struct ValueItemBase :
+
+    cli::Identifier,
+    kf::mixin::ReprTo<ValueItemBase<T>>
+
+{
+private:
+    KF_IMPL_REPR_TO(ValueItemBase<T>);
+    constexpr kf::usize reprToImpl(auto &char_writable) const noexcept {
+        return char_writable.append(this->name);
+    }
+};
+
+template<kf::trivial T> struct ValueItem<T> : ValueItemBase<T> {
     using ValueType = T;
 
     constexpr ValueItem(cli::Identifier id, ValueType value) noexcept :
-        cli::Identifier{id}, _value{value} {}
+        ValueItemBase<T>{id}, _value{value} {}
 
     [[nodiscard]] constexpr T value() const noexcept {
         return _value;
@@ -32,11 +46,11 @@ private:
     ValueType _value;
 };
 
-template<> struct ValueItem<kf::StringView> : cli::Identifier {
+template<> struct ValueItem<kf::StringView> : ValueItemBase<kf::StringView> {
     using ValueType = kf::StringView;
 
     constexpr ValueItem(cli::Identifier id) noexcept :
-        cli::Identifier{id} {}
+        ValueItemBase<kf::StringView>{id} {}
 
     [[nodiscard]] constexpr kf::StringView value() const noexcept {
         return this->name;
@@ -50,22 +64,11 @@ struct ArgumentBase {
         kf::StringView lexeme;// not empty
 
         template<kf::implements<cli::Identifier> T> [[nodiscard]] constexpr auto parseEnumerated(kf::Slice<T const> items) const noexcept -> kf::Option<T const &> {
-            for (auto const &item: items) {// TODO: impl for Slice firstWhere(F: bool(T)) -> Option<T &>
-                if (item.match(lexeme)) {
-                    return kf::someRef(item);
-                }
+            auto maybe_item = items.firstWhere([this](auto const &item) { return item.match(lexeme); });
+            if (maybe_item.isNone()) {
+                channel_output.error("'{}' not allowed, use: {}", lexeme, items);
             }
-
-            channel_output.error("'{}' not allowed, use:", lexeme);
-            for (auto const &item: items) {
-                if (item.shortcut.isSome()) {
-                    channel_output.error("\t'{}' ('{}')", item.name, item.shortcut.unwrap());
-                } else {
-                    channel_output.error("\t'{}'", item.name);
-                }
-            }
-
-            return kf::none;
+            return maybe_item;
         }
     };
 
@@ -221,7 +224,8 @@ struct Argument :
     internal::ArgumentBase,
     Identifier,
     kf::mixin::NonCopyable,
-    kf::mixin::Resettable<Argument>
+    kf::mixin::Resettable<Argument>,
+    kf::mixin::ReprTo<Argument>
 
 {
 
@@ -321,6 +325,69 @@ private:
     };
 
     Kind _kind;
+
+    template<kf::implements<Identifier> T> static constexpr kf::usize reprList(auto &char_writable, kf::Slice<T const> items) noexcept {
+        bool f = false;
+        kf::usize write_count = 0;
+        for (auto const &item: items) {
+            if (f) {
+                write_count += char_writable.append('|');
+            }
+            f = true;
+            write_count += char_writable.append(item.name);
+        }
+        return write_count;
+    }
+
+    constexpr kf::usize reprType(auto &char_writable) const noexcept {
+        switch (_kind) {
+            case Kind::Enum: return reprList(char_writable, _enum.items);
+            case Kind::Boolean: return char_writable.append("bool");
+            case Kind::Integer: return char_writable.append("int");
+            case Kind::Real: return char_writable.append("float");
+            case Kind::String:
+                if (_string.options.empty()) {
+                    return char_writable.append("str");
+                } else {
+                    return reprList(char_writable, _string.options);
+                }
+        }
+        return 0;
+    }
+
+    constexpr kf::usize reprDefault(auto &char_writable) const noexcept {
+        switch (_kind) {
+            case Kind::Enum: return char_writable.append(_enum.params.default_value.unwrap());
+            case Kind::Boolean: return char_writable.append(_boolean.params.default_value.unwrap());
+            case Kind::Integer: return char_writable.append(_integer.params.default_value.unwrap());
+            case Kind::Real: return char_writable.append(_real.params.default_value.unwrap());
+            case Kind::String: return (
+                char_writable.append('"') +
+                char_writable.append(_string.params.default_value.unwrap()) +
+                char_writable.append('"'));
+        }
+        return 0;
+    }
+
+    KF_IMPL_REPR_TO(Argument);
+    constexpr kf::usize reprToImpl(auto &char_writable) const noexcept {
+        bool const has_default = not positional();
+
+        kf::usize write_count = char_writable.append(has_default ? '[' : '<');
+        write_count += char_writable.append(this->name);
+        write_count += char_writable.append(':');
+        write_count += char_writable.append(' ');
+
+        write_count += this->reprType(char_writable);
+
+        if (has_default) {
+            write_count += char_writable.append('=');
+            write_count += reprDefault(char_writable);
+        }
+
+        write_count += char_writable.append(has_default ? ']' : '>');
+        return write_count;
+    }
 
     KF_IMPL_RESETTABLE(Argument);
     void resetImpl() noexcept {

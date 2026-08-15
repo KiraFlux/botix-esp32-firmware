@@ -4,7 +4,6 @@
 #pragma once
 
 #include <kf/Bytes.hpp>
-#include <kf/NoneType.hpp>
 #include <kf/Option.hpp>
 #include <kf/core.hpp>
 
