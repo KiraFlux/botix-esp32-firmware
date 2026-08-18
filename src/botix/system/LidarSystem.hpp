@@ -20,7 +20,7 @@ struct LidarSystem : System<LidarSystem, bool()> {
         transport::IpEndpoint const &remote;
     };
 
-    explicit constexpr LidarSystem(Dependencies deps) noexcept :
+    explicit LidarSystem(Dependencies deps) noexcept :
         service{{
             .config = deps.config,
             .remote = deps.remote,

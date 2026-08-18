@@ -277,6 +277,16 @@ private:
         },
         BOTIX_FIELD(UserConfig, "lidar.port", lidar.remote_port, Kind::Unsigned, kf::u16),
         Field{
+            .path = "lidar.inverted",
+            .offset = BOTIX_CONFIG_OFFSET(UserConfig, lidar.inverted),
+            .size = sizeof(kf::u8),
+            .kind = Kind::Unsigned,
+            .secret = false,
+            .options = {},
+            .min = kf::some(0.0),
+            .max = kf::some(1.0),
+        },
+        Field{
             .path = "lidar.rx_pin",
             .offset = BOTIX_CONFIG_OFFSET(UserConfig, lidar.rx_pin),
             .size = sizeof(kf::u8),

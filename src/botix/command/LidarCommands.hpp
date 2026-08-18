@@ -51,6 +51,7 @@ private:
 
         call.output.print("uart               : {}", _lidar.config().uart_num);
         call.output.print("baudrate           : {}", _lidar.config().baudrate);
+        call.output.print("inverted           : {}", _lidar.config().inverted == 1 ? "yes" : "no");
         call.output.print("destination        : {}:{}", _remote.address, _lidar.config().remote_port);
         call.output.print("bytes_read         : {}", _lidar.bytesRead());
         call.output.print("datagrams          : {}", _lidar.datagrams());

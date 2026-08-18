@@ -51,6 +51,10 @@ struct LidarServiceConfig : kf::mixin::Resettable<LidarServiceConfig> {
     ///       binding some unrelated pin.
     kf::u8 rx_pin;
 
+    /// @brief Set to 1 to invert the UART RX level.
+    /// @note An integer keeps legacy padding bytes from becoming invalid bools.
+    kf::u8 inverted;
+
     /// @brief Where the lidar is wired on this chassis
     static constexpr kf::u8 default_rx_pin{16};
 
@@ -63,6 +67,7 @@ private:
     constexpr void resetImpl() noexcept {
         uart_num = 2;
         rx_pin = default_rx_pin;
+        inverted = 0;
         baudrate = 230'400;// LD06 / LD19 / D500 family
         remote_port = 14560;
         rx_buffer_length = 2048;
@@ -107,7 +112,7 @@ struct LidarService final :
         transport::IpEndpoint const &remote;
     };
 
-    explicit constexpr LidarService(Dependencies deps) noexcept :
+    explicit LidarService(Dependencies deps) noexcept :
         kf::mixin::Configured<Config>{deps.config}, _remote{deps.remote} {}
 
     [[nodiscard]] constexpr kf::u32 bytesRead() const noexcept { return _bytes_read; }
@@ -122,7 +127,6 @@ private:
     transport::IpEndpoint const &_remote;
     HardwareSerial *_serial{nullptr};
     WiFiUDP _udp{};
-
     kf::u32 _bytes_read{0}, _datagrams{0}, _bytes_forwarded{0}, _send_failures{0};
     kf::u16 _sequence{0};
     bool _running{false};
@@ -139,6 +143,13 @@ private:
             return false;
         }
 
+        auto const rx_pin = this->config().effectiveRxPin();
+
+        // Configure the idle level before the UART claims the pin. Calling
+        // pinMode() after HardwareSerial::begin() can replace the peripheral
+        // pin configuration and leave UART2 detached from the signal.
+        pinMode(rx_pin, INPUT_PULLUP);
+
         _serial = new HardwareSerial(this->config().uart_num);
 
         // Must precede begin() to take effect
@@ -148,13 +159,9 @@ private:
         _serial->begin(
             this->config().baudrate,
             SERIAL_8N1,
-            static_cast<int8_t>(this->config().effectiveRxPin()),
-            -1);
-
-        // Idle UART is high. Without a pull-up an unconnected RX floats and the
-        // peripheral frames noise into bytes, which reads as a live sensor
-        // talking gibberish rather than as a wire that is not attached.
-        pinMode(this->config().effectiveRxPin(), INPUT_PULLUP);
+            static_cast<int8_t>(rx_pin),
+            -1,
+            this->config().inverted == 1);
 
         _running = true;
         _logger.info(
