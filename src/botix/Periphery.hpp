@@ -69,9 +69,9 @@ struct Periphery :
 
             // sensors
 
-            wheel_odometry_encoder_left.units_per_tick = -1;
+            wheel_odometry_encoder_left.units_per_tick = -0.221565;
             wheel_odometry_encoder_left.pull = kf::gpio::DigitalInput::Pull::External;
-            wheel_odometry_encoder_right.units_per_tick = 1;
+            wheel_odometry_encoder_right.units_per_tick = 0.221565;
             wheel_odometry_encoder_right.pull = kf::gpio::DigitalInput::Pull::External;
         }
     };

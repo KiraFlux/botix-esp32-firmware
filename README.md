@@ -163,6 +163,10 @@ config set device.mixer.right_scale 911
 config save
 ```
 
+For the current 67 mm wheels and 950 encoder ticks per wheel revolution, the
+calibrated encoder scales are `device.encoder.left_mm_per_tick = -0.221565`
+and `device.encoder.right_mm_per_tick = 0.221565`.
+
 On the robot measured here the right wheel ran 9.8% fast over repeated runs,
 giving 911.
 
