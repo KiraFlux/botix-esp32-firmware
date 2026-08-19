@@ -15,7 +15,7 @@ struct Registry : kf::mixin::NonCopyable {
 
     constexpr Registry() noexcept = default;
 
-    Transport &get(Kind kind) noexcept {
+    constexpr Transport &get(Kind kind) noexcept {
         (void) kind;
         return espnow;
     }

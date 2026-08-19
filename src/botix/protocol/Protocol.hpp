@@ -4,12 +4,14 @@
 #pragma once
 
 #include <kf/BytesView.hpp>
+#include <kf/core.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/NonCopyable.hpp>
 
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/OutgoingTelemetry.hpp"
+#include "botix/cli/Channel.hpp"
 #include "botix/transport/Address.hpp"
 #include "botix/transport/Link.hpp"
 #include "botix/transport/Receiver.hpp"
@@ -21,6 +23,7 @@ struct Protocol : kf::mixin::NonCopyable {
     struct PollContext {
         transport::Link &transport_link;
         OutgoingTelemetry &outgoing_telemetry;
+        cli::Channel::Output &cli_channel_output;
         kf::units::Milliseconds timestamp;
     };
 
@@ -29,6 +32,7 @@ struct Protocol : kf::mixin::NonCopyable {
     struct ReceiveContext {
         transport::Receiver::ReceiveContext transport;
         IncomingTelemetry &incoming_telemetry;
+        cli::Channel::Input &cli_channel_input;
         kf::units::Milliseconds timestamp;
     };
 

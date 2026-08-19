@@ -34,7 +34,7 @@ struct Registry :
 
     using kf::mixin::Configured<Config>::Configured;
 
-    Protocol &get(Kind kind) noexcept {
+    constexpr Protocol &get(Kind kind) noexcept {
         switch (kind) {
             case Kind::Mavlink:
                 return mavlink;

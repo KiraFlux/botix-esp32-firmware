@@ -20,17 +20,17 @@
 
 namespace botix::cli {
 
-struct Namespace :
+struct Group :
 
     Identifier,
     private kf::Registry<Command>,
     kf::mixin::NonCopyable,
     kf::mixin::Configured<Config>,
-    kf::mixin::ExtraAllocationLength<Namespace>
+    kf::mixin::ExtraAllocationLength<Group>
 
 {
 
-    explicit constexpr Namespace(kf::Arena &arena, Config const &config, Identifier id) noexcept :
+    explicit constexpr Group(kf::Arena &arena, Config const &config, Identifier id) noexcept :
         kf::mixin::Configured<Config>{config},
         Identifier{id},
         kf::Registry<Command>{arena, config.max_command_count} {}
@@ -56,7 +56,7 @@ struct Namespace :
     }
 
 private:
-    KF_IMPL_EXTRA_ALLOCATION_LENGTH(Namespace);
+    KF_IMPL_EXTRA_ALLOCATION_LENGTH(Group);
 
     static constexpr auto getExtraAllocationLengthImpl(Config const &config, auto const &...args) noexcept {
         return static_cast<kf::usize>(config.max_command_count * sizeof(Command));

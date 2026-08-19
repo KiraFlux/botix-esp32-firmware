@@ -24,7 +24,7 @@ void kf::main(kf::Init &init) {
 
     auto &channel = maybe_channel.unwrap();
 
-    auto maybe_namespace = console.addNamespace(init.arena, {.name = "transport"});
+    auto maybe_namespace = console.addGroup(init.arena, {.name = "transport"});
 
     auto maybe_command = maybe_namespace.unwrap().addCommand(
         init.arena,

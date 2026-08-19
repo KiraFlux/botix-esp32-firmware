@@ -5,9 +5,13 @@
 
 #include <utility>
 
+#include <WiFi.h>
+
+#include <kf/Arena.hpp>
 #include <kf/Option.hpp>
 #include <kf/units.hpp>
 
+#include "botix/cli/Group.hpp"
 #include "botix/transport/Kind.hpp"
 #include "botix/transport/Link.hpp"
 #include "botix/transport/Receiver.hpp"
@@ -17,13 +21,15 @@
 
 namespace botix::system {
 
-struct TransportSystem : System<TransportSystem, void(transport::Kind)> {
+struct TransportSystem : System<TransportSystem> {
 
-    struct Dependencies {};
+    struct Dependencies {
+        transport::Kind init_transport_kind;
+    };
 
-    explicit constexpr TransportSystem(Dependencies deps) noexcept {
-        (void) deps;
-    }
+    explicit constexpr TransportSystem(Dependencies deps) noexcept :
+        System<TransportSystem>{{.name{"transport"}}},
+        link{_registry.get(deps.init_transport_kind)} {}
 
     [[nodiscard]] auto &get(transport::Kind kind) noexcept {
         return _registry.get(kind);
@@ -37,20 +43,25 @@ struct TransportSystem : System<TransportSystem, void(transport::Kind)> {
         _receiver.onReceiveForeign(std::forward<decltype(f)>(f));
     }
 
-    transport::Link link{};
 private:
     transport::Receiver _receiver{};
     transport::Registry _registry{};
 
-    BOTIX_IMPL_SYSTEM(TransportSystem, void(transport::Kind));
+public:
+    transport::Link link;
 
-    void initImpl(transport::Kind init_transport_kind) noexcept {
+private:
+    BOTIX_IMPL_SYSTEM(TransportSystem);
+
+    void onSetupImpl() noexcept {
+        WiFi.mode(WIFI_MODE_STA);
+
         (void) _registry.espnow.init();
 
         _registry.espnow.receiver(kf::someRef(_receiver));
-
-        link.set(_registry.get(init_transport_kind));
     }
+
+    void setupCliImpl(kf::Arena &arena, cli::Group &group) noexcept {}
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
         link.poll(now);

@@ -7,15 +7,17 @@
 
 #include <MAVLink.h>
 
+#include <kf/Arena.hpp>
 #include <kf/units.hpp>
 
 #include "botix/IncomingTelemetry.hpp"
 #include "botix/Periphery.hpp"
-#include "botix/config/DeviceConfig.hpp"
 #include "botix/behavior/Behavior.hpp"
 #include "botix/behavior/Kind.hpp"
 #include "botix/behavior/Link.hpp"
 #include "botix/behavior/Registry.hpp"
+#include "botix/cli/Group.hpp"
+#include "botix/config/DeviceConfig.hpp"
 #include "botix/service/MixerService.hpp"
 #include "botix/transport/Link.hpp"
 
@@ -23,7 +25,7 @@
 
 namespace botix::system {
 
-struct BehaviorSystem : System<BehaviorSystem, void()> {
+struct BehaviorSystem : System<BehaviorSystem> {
 
     struct Dependencies {
         config::DeviceConfig const &config;
@@ -32,6 +34,7 @@ struct BehaviorSystem : System<BehaviorSystem, void()> {
     };
 
     explicit constexpr BehaviorSystem(Dependencies deps) noexcept :
+        System<BehaviorSystem>{{.name{"behavior"}}},
         _mixer_service{deps.config.mixer_service, deps.incoming_telemetry.control_input},
         _registry{deps.periphery, _mixer_service} {}
 
@@ -47,9 +50,11 @@ public:
     behavior::Link link{_registry.operational};
 
 private:
-    BOTIX_IMPL_SYSTEM(BehaviorSystem, void());
+    BOTIX_IMPL_SYSTEM(BehaviorSystem);
 
-    void initImpl() noexcept {}
+    void onSetupImpl() noexcept {}
+
+    void setupCliImpl(kf::Arena &arena, cli::Group &group) noexcept {}
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
         link.onPoll(now);

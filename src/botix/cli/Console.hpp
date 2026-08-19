@@ -18,8 +18,8 @@
 
 #include "botix/cli/Channel.hpp"
 #include "botix/cli/Config.hpp"
+#include "botix/cli/Group.hpp"
 #include "botix/cli/Identifier.hpp"
-#include "botix/cli/Namespace.hpp"
 
 namespace botix::internal {
 
@@ -42,14 +42,14 @@ template<typename Impl> struct ChannelRegistry : private ChannelRegistryBase {
     }
 };
 
-using ConsoleNamespaceRegistryBase = kf::Registry<cli::Namespace>;
+using ConsoleGroupRegistryBase = kf::Registry<cli::Group>;
 
-template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespaceRegistryBase {
+template<typename Impl> struct ConsoleGroupRegistry : private ConsoleGroupRegistryBase {
 
-    explicit ConsoleNamespaceRegistry(kf::Arena &arena, kf::usize max_namespace_count) noexcept :
-        ConsoleNamespaceRegistryBase{arena, max_namespace_count} {
+    explicit ConsoleGroupRegistry(kf::Arena &arena, kf::usize max_namespace_count) noexcept :
+        ConsoleGroupRegistryBase{arena, max_namespace_count} {
         // caller ensure
-        (void) this->addNamespace(
+        (void) this->addGroup(
             arena,
             {
                 .name{"global"},
@@ -57,7 +57,7 @@ template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespa
                 .shortcut{kf::none},
             });
 
-        auto should_be_command = this->globalNamespace().addCommand(
+        auto should_be_command = this->globalGroup().addCommand(
             arena,
             {
                 .name{"help"},
@@ -72,8 +72,8 @@ template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespa
                     return;
                 }
 
-                if (auto const &maybe_namespace = this->getNamespace(target); maybe_namespace.isSome()) {
-                    writeNamespaceHelp(output.string, maybe_namespace.unwrap());
+                if (auto const &maybe_namespace = this->getGroup(target); maybe_namespace.isSome()) {
+                    writeGroupHelp(output.string, maybe_namespace.unwrap());
                     return;
                 }
 
@@ -82,7 +82,7 @@ template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespa
                 }
 
                 for (auto const ns: this->namespaces()) {
-                    writeNamespaceHelp(output.string, *ns);
+                    writeGroupHelp(output.string, *ns);
                 }
             });
 
@@ -102,23 +102,23 @@ template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespa
         return this->items();
     }
 
-    [[nodiscard]] decltype(auto) globalNamespace() noexcept {
+    [[nodiscard]] decltype(auto) globalGroup() noexcept {
         return *namespaces()[0];
     }
 
-    [[nodiscard]] decltype(auto) globalNamespace() const noexcept {
+    [[nodiscard]] decltype(auto) globalGroup() const noexcept {
         return *namespaces()[0];
     }
 
-    [[nodiscard]] decltype(auto) getNamespace(kf::StringView name_or_shortcut) noexcept {
+    [[nodiscard]] decltype(auto) getGroup(kf::StringView name_or_shortcut) noexcept {
         return this->get(name_or_shortcut);
     }
 
-    [[nodiscard]] decltype(auto) getNamespace(kf::StringView name_or_shortcut) const noexcept {
+    [[nodiscard]] decltype(auto) getGroup(kf::StringView name_or_shortcut) const noexcept {
         return this->get(name_or_shortcut);
     }
 
-    [[nodiscard]] decltype(auto) addNamespace(kf::Arena &arena, cli::Identifier id) {
+    [[nodiscard]] decltype(auto) addGroup(kf::Arena &arena, cli::Identifier id) {
         return this->add(arena, static_cast<Impl const *>(this)->config(), id);
     }
 
@@ -126,12 +126,12 @@ template<typename Impl> struct ConsoleNamespaceRegistry : private ConsoleNamespa
         auto const maybe_delimeter_index = path.indexOf('.');
 
         if (maybe_delimeter_index.isNone()) {
-            return globalNamespace().getCommand(path);
+            return globalGroup().getCommand(path);
         }
 
         auto const delimeter_index = maybe_delimeter_index.unwrap();
 
-        auto maybe_namespace = getNamespace(path.first(delimeter_index));
+        auto maybe_namespace = getGroup(path.first(delimeter_index));
         if (maybe_namespace.isNone()) { return kf::none; }
 
         return maybe_namespace.unwrap().getCommand(path.fromOffset(delimeter_index + 1));
@@ -168,8 +168,8 @@ protected:
         (void) char_writable.append('\n');
     }
 
-    void writeNamespaceHelp(auto &char_writable, cli::Namespace const &space) const noexcept {
-        (void) char_writable.append("\nNamespace:\n  ");
+    void writeGroupHelp(auto &char_writable, cli::Group const &space) const noexcept {
+        (void) char_writable.append("\nGroup:\n  ");
         (void) char_writable.append(space.name);
 
         if (space.shortcut.isSome()) {
@@ -199,7 +199,7 @@ struct Console final :
 
     kf::mixin::Configured<Config>,
     internal::ChannelRegistry<Console>,
-    internal::ConsoleNamespaceRegistry<Console>,
+    internal::ConsoleGroupRegistry<Console>,
     kf::mixin::NonCopyable,
     kf::mixin::Poll<Console>,
     kf::mixin::ExtraAllocationLength<Console>
@@ -209,7 +209,7 @@ struct Console final :
     explicit Console(kf::Arena &arena, Config const &config) noexcept :
         kf::mixin::Configured<Config>{config},
         internal::ChannelRegistry<Console>{arena, config.max_channel_count},
-        internal::ConsoleNamespaceRegistry<Console>{arena, config.max_namespace_count} {}
+        internal::ConsoleGroupRegistry<Console>{arena, config.max_namespace_count} {}
 
 private:
     kf::Logger _logger{"Console"};
@@ -303,7 +303,7 @@ private:
 
     KF_IMPL_EXTRA_ALLOCATION_LENGTH(Console);
     static constexpr auto getExtraAllocationLengthImpl(Config const &config) noexcept {
-        return static_cast<kf::usize>(config.max_channel_count * sizeof(Channel) + config.max_namespace_count * sizeof(Namespace));
+        return static_cast<kf::usize>(config.max_channel_count * sizeof(Channel) + config.max_namespace_count * sizeof(Group));
     }
 };
 

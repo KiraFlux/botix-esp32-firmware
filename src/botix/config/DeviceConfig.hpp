@@ -5,6 +5,7 @@
 
 #include "botix/OutgoingTelemetry.hpp"
 #include "botix/Periphery.hpp"
+#include "botix/cli/Config.hpp"
 #include "botix/protocol/Registry.hpp"
 #include "botix/service/MixerService.hpp"
 
@@ -12,9 +13,10 @@
 
 namespace botix::config {
 
-struct DeviceConfig : Config<DeviceConfig, 0> {
+struct DeviceConfig : Config<DeviceConfig, 1> {
 
     Periphery::Config periphery{};
+    cli::Config cli{};
 
     OutgoingTelemetry::Config outgoing_telemetry{};
 

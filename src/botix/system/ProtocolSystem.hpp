@@ -5,9 +5,14 @@
 
 #include <utility>
 
+#include <kf/Arena.hpp>
 #include <kf/units.hpp>
 
 #include "botix/OutgoingTelemetry.hpp"
+#include "botix/cli/Argument.hpp"
+#include "botix/cli/Channel.hpp"
+#include "botix/cli/Command.hpp"
+#include "botix/cli/Group.hpp"
 #include "botix/config/DeviceConfig.hpp"
 #include "botix/protocol/Kind.hpp"
 #include "botix/protocol/Link.hpp"
@@ -19,21 +24,23 @@
 
 namespace botix::system {
 
-struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
+struct ProtocolSystem : System<ProtocolSystem> {
 
     struct Dependencies {
         config::DeviceConfig const &config;
         transport::Link &transport_link;
         OutgoingTelemetry &outgoing_telemetry;
+        cli::Channel::Output &cli_channel_output;
+        protocol::Kind init_protocol_kind;
     };
 
     explicit constexpr ProtocolSystem(Dependencies deps) noexcept :
+        System<ProtocolSystem>{{.name = "protocol"}},
         _registry{deps.config.protocol_registry},
-        _protocol_poll_context{
-            .transport_link = deps.transport_link,
-            .outgoing_telemetry = deps.outgoing_telemetry,
-            .timestamp = 0,
-        } {}
+        _transport_link{deps.transport_link},
+        _outgoing_telemetry{deps.outgoing_telemetry},
+        _cli_channel_output{deps.cli_channel_output},
+        link{_registry.get(deps.init_protocol_kind)} {}
 
     [[nodiscard]] auto &get(protocol::Kind kind) noexcept {
         return _registry.get(kind);
@@ -47,21 +54,48 @@ struct ProtocolSystem : System<ProtocolSystem, void(protocol::Kind)> {
         _registry.mavlink.callback(std::forward<decltype(f)>(f));
     }
 
-    protocol::Link link{};
+private:
+    static constexpr cli::Argument::EnumItem protocol_kind_options[2]{
+        {{.name{"raw"}}, protocol::Kind::Raw},
+        {{.name{"mavlink"}}, protocol::Kind::Mavlink},
+    };
+
+    protocol::Registry _registry;
+    transport::Link &_transport_link;
+    OutgoingTelemetry &_outgoing_telemetry;
+    cli::Channel::Output &_cli_channel_output;
+
+public:
+    protocol::Link link;
 
 private:
-    protocol::Registry _registry;
-    protocol::Protocol::PollContext _protocol_poll_context;
+    BOTIX_IMPL_SYSTEM(ProtocolSystem);
 
-    BOTIX_IMPL_SYSTEM(ProtocolSystem, void(protocol::Kind));
+    void onSetupImpl() noexcept {}
 
-    void initImpl(protocol::Kind init_protocol_kind) noexcept {
-        link.set(_registry.get(init_protocol_kind));
+    void setupCliImpl(kf::Arena &arena, cli::Group &group) noexcept {
+        auto maybe_set = group.addCommand(
+            arena,
+            {.name = "set"},
+            [this](cli::Command::Context const &context) -> void {
+                auto const kind = context.arguments[0]->enumValue<protocol::Kind>();
+                auto const kind_name = context.arguments[0]->enumName();
+                auto const index = context.arguments[0]->enumIndex();
+                link.set(_registry.get(kind));
+                context.channel.output.print("set {} protocol (index: {}, kind: {})", kind_name, index, static_cast<int>(kind));
+            });
+        if (maybe_set.isSome()) {
+            (void) maybe_set.unwrap().addEnumArgument(arena, {.name = "kind"}, {.items{protocol_kind_options}});
+        }
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        _protocol_poll_context.timestamp = now;
-        link.poll(_protocol_poll_context);
+        link.poll({
+            .transport_link = _transport_link,
+            .outgoing_telemetry = _outgoing_telemetry,
+            .cli_channel_output = _cli_channel_output,
+            .timestamp = now,
+        });
     }
 };
 

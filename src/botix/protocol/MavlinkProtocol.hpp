@@ -8,6 +8,7 @@
 #include <kf/BytesView.hpp>
 #include <kf/Timer.hpp>
 #include <kf/core.hpp>
+#include <kf/math.hpp>
 #include <kf/units.hpp>
 
 #include <kf/mixin/Callbacked.hpp>
@@ -39,7 +40,8 @@ struct MavlinkProtocolConfig : kf::mixin::DefaultResettable<MavlinkProtocolConfi
         // components
 
         component_id_heartbeat{MAV_COMP_ID_USER1},
-        component_id_wheel_distance{MAV_COMP_ID_USER2};
+        component_id_serial_control{MAV_COMP_ID_USER2},
+        component_id_wheel_distance{MAV_COMP_ID_USER3};
 };
 
 }// namespace botix::internal
@@ -75,6 +77,8 @@ struct MavlinkProtocol :
 
             (void) sendHeartbeat(context.transport_link);
         }
+
+        sendSerialControl(context);
     }
 
     void receive(ReceiveContext const &context) noexcept override {
@@ -95,21 +99,13 @@ struct MavlinkProtocol :
 
     [[nodiscard]] bool onMessage(ReceiveContext const &context, mavlink_message_t const &message) noexcept {
         switch (message.msgid) {
-            case MAVLINK_MSG_ID_MANUAL_CONTROL: {
-                mavlink_manual_control_t m;
-                mavlink_msg_manual_control_decode(&message, &m);
-
-                context.incoming_telemetry.control_input.update(
-                    botix::IncomingTelemetry::ControlInput{
-                        .r_axis = m.r,
-                        .z_axis = m.z,
-                        .y_axis = m.y,
-                        .x_axis = m.x,
-                    },
-                    context.timestamp);
-
+            case MAVLINK_MSG_ID_MANUAL_CONTROL:
+                onManualControl(context, message);
                 break;
-            }
+
+            case MAVLINK_MSG_ID_SERIAL_CONTROL:
+                onSerialControl(context, message);
+                break;
 
             default:
                 return false;
@@ -121,25 +117,73 @@ struct MavlinkProtocol :
 private:
     kf::Timer _heartbeat_timer{this->config().heartbeat_timer};
 
+    void onManualControl(ReceiveContext const &context, mavlink_message_t const &message) noexcept {
+        mavlink_manual_control_t m;
+        mavlink_msg_manual_control_decode(&message, &m);
+
+        context.incoming_telemetry.control_input.update(
+            botix::IncomingTelemetry::ControlInput{
+                .r_axis = m.r,
+                .z_axis = m.z,
+                .y_axis = m.y,
+                .x_axis = m.x,
+            },
+            context.timestamp);
+    }
+
+    void onSerialControl(ReceiveContext const &context, mavlink_message_t const &message) noexcept {
+        mavlink_serial_control_t m;
+        mavlink_msg_serial_control_decode(&message, &m);
+        (void) context.cli_channel_input.feed({reinterpret_cast<char const *>(m.data), m.count});
+    }
+
     [[nodiscard]] bool sendWheelDistance(PollContext const &context) const noexcept {
         mavlink_message_t message;
 
         kf::u8 const wheel_count = 2;
 
         kf::f64 const distance[wheel_count]{
-            context.outgoing_telemetry.wheel_distance.value().left_mm * 1'000,
-            context.outgoing_telemetry.wheel_distance.value().right_mm * 1'000,
+            context.outgoing_telemetry.wheel_distance.value().left_mm / 1'000,
+            context.outgoing_telemetry.wheel_distance.value().right_mm / 1'000,
         };
 
         (void) mavlink_msg_wheel_distance_pack(
             this->config().system_id_self,
             this->config().component_id_wheel_distance,
             &message,
-            static_cast<kf::u64>(context.timestamp) * 1'000'000,// time_usec
+            static_cast<kf::u64>(context.timestamp) * 1'000,// time_usec
             wheel_count,
             distance);
 
         return sendMessage(context.transport_link, message);
+    }
+
+    void sendSerialControl(PollContext const &context) const noexcept {
+        mavlink_message_t message;
+
+        auto output = context.cli_channel_output.drain();
+
+        while (output.length() > 0) {
+
+            kf::u8 const chunk_length = kf::math::min(output.length(), MAVLINK_MSG_SERIAL_CONTROL_FIELD_DATA_LEN);
+
+            (void) mavlink_msg_serial_control_pack(
+                this->config().system_id_self,
+                this->config().component_id_serial_control,
+                &message,
+                SERIAL_CONTROL_DEV_SHELL,
+                SERIAL_CONTROL_FLAG_EXCLUSIVE | SERIAL_CONTROL_FLAG_RESPOND,
+                0,// use default timeout,
+                0,// use baudrate
+                chunk_length,
+                reinterpret_cast<kf::u8 const *>(output.data()),
+                this->config().system_id_target,
+                0);
+
+            (void) sendMessage(context.transport_link, message);
+
+            output = output.fromOffset(chunk_length);
+        }
     }
 
     [[nodiscard]] bool sendHeartbeat(transport::Link &transport_link) const noexcept {

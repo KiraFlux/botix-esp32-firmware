@@ -6,7 +6,6 @@
 #include <algorithm>
 
 #include <kf/BytesView.hpp>
-#include <kf/Option.hpp>
 #include <kf/core.hpp>
 
 #include <kf/mixin/BinaryWritable.hpp>
@@ -27,62 +26,49 @@ struct Link final :
 {
     using Self = Link;
 
+    explicit constexpr Link(transport::Transport &transport) noexcept :
+        _transport{&transport} {}
+
     void set(Transport &new_transport) noexcept {
         if (connected()) {
             disconnect();
         }
 
-        _transport = kf::someRef(new_transport);
+        _transport = &new_transport;
     }
 
     // properties
 
     [[nodiscard]] constexpr bool connected() const noexcept {
-        return _transport.isSome() and _transport.unwrap().connected();
+        return _transport->connected();
     }
 
     [[nodiscard]] constexpr auto activeAddress() const noexcept -> kf::Option<Address const &> {
-        return _transport.isSome() ? kf::none : _transport.unwrap().activeAddress();
+        return _transport->activeAddress();
     }
 
     // control
 
     [[nodiscard]] bool connect(Address const &address) noexcept {
-        if (_transport.isNone()) {
-            return false;
-        }
-
-        return _transport.unwrap().connect(address);
+        return _transport->connect(address);
     }
 
     void disconnect() noexcept {
-        if (_transport.isNone()) {
-            return;
-        }
-
-        _transport.unwrap().disconnect();
+        _transport->disconnect();
     }
 
 private:
-    kf::Option<Transport &> _transport{kf::none};
+    Transport *_transport;
 
     KF_IMPL_POLL(Self);
     void pollImpl(kf::units::Milliseconds now) noexcept {
-        if (_transport.isNone()) {
-            return;
-        }
-
-        _transport.unwrap().poll(now);
+        _transport->poll(now);
     }
 
     KF_IMPL_BINARY_WRITABLE(Self, bool);
 
     bool writeBufferImpl(kf::BytesView buffer) noexcept {
-        if (_transport.isNone()) {
-            return false;
-        }
-
-        return _transport.unwrap().send(buffer);
+        return _transport->send(buffer);
     }
 
     bool writePacketImpl(kf::trivial auto const &packet) noexcept {

@@ -3,12 +3,14 @@
 
 #pragma once
 
+#include <kf/Arena.hpp>
 #include <kf/Bytes.hpp>
 #include <kf/Timer.hpp>
 #include <kf/core.hpp>
 #include <kf/esp/NVS.hpp>
 #include <kf/units.hpp>
 
+#include "botix/cli/Group.hpp"
 #include "botix/config/Config.hpp"
 #include "botix/config/DeviceConfig.hpp"
 #include "botix/config/UserConfig.hpp"
@@ -18,7 +20,7 @@
 
 namespace botix::system {
 
-struct ConfigSystem : System<ConfigSystem, void()> {
+struct ConfigSystem : System<ConfigSystem> {
 
     template<kf::implements<config::ConfigTag> ConfigImpl> struct Strategy {
 
@@ -46,7 +48,8 @@ struct ConfigSystem : System<ConfigSystem, void()> {
         }
     };
 
-    constexpr ConfigSystem() noexcept = default;
+    constexpr ConfigSystem() noexcept :
+        System<ConfigSystem>{{.name{"config"}}} {};
 
 private:
     static constexpr kf::Timer::Config _sync_timer_config{.value = 10'000};
@@ -72,15 +75,25 @@ public:
     }};
 
 private:
-    BOTIX_IMPL_SYSTEM(ConfigSystem, void());
+    BOTIX_IMPL_SYSTEM(ConfigSystem);
 
-    void initImpl() noexcept {
+    void onSetupImpl() noexcept {
         if (_nvs.init().isError()) {
             // _logger.error("NVS init failed");
         }
 
         Strategy<config::DeviceConfig>::init(device_service);
         Strategy<config::UserConfig>::init(user_service);
+    }
+
+    void setupCliImpl(kf::Arena &arena, cli::Group &group) noexcept {
+        // value <path> [lexeme: str=""]
+        //
+        // try to resolve path
+        // if lexeme is empty => get
+        // try to parse lexeme as field value
+
+        // reset <group-name>
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {

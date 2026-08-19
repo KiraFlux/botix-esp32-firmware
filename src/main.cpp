@@ -6,12 +6,13 @@
 #include <kf/rtos/Task.hpp>
 
 #include "botix/OutgoingTelemetry.hpp"
+#include "botix/Periphery.hpp"
+#include "botix/cli/Console.hpp"
 #include "botix/protocol/Kind.hpp"
 #include "botix/transport/Address.hpp"
 
 #include "botix/system/BehaviorSystem.hpp"
 #include "botix/system/ConfigSystem.hpp"
-#include "botix/system/HardwareSystem.hpp"
 #include "botix/system/ProtocolSystem.hpp"
 #include "botix/system/TelemetrySystem.hpp"
 #include "botix/system/TransportSystem.hpp"
@@ -23,27 +24,32 @@ void kf::main(kf::Init &init) {
 
     static botix::system::ConfigSystem system_config{};
 
-    static botix::system::HardwareSystem system_hardware{{
-        .config = system_config.device,
-    }};
+    static botix::Periphery periphery{system_config.device.periphery};
+
+    static botix::cli::Console console{init.arena, system_config.device.cli};
+
+    auto maybe_main_channel = console.addChannel(init.arena, {.echo = true});
+    auto maybe_other_channel = console.addChannel(init.arena, {.echo = true});
 
     static botix::system::TelemetrySystem system_telemetry{{
         .config = system_config.device,
     }};
 
     static botix::system::TransportSystem system_transport{{
-        // TODO: check for deps
+        .init_transport_kind = system_config.user.init_transport_kind,
     }};
 
     static botix::system::ProtocolSystem system_protocol{{
         .config = system_config.device,
         .transport_link = system_transport.link,
         .outgoing_telemetry = system_telemetry.outgoing,
+        .cli_channel_output = maybe_other_channel.unwrap().output,
+        .init_protocol_kind = system_config.user.init_protocol_kind,
     }};
 
     static botix::system::BehaviorSystem system_behavior{{
         .config = system_config.device,
-        .periphery = system_hardware.periphery,
+        .periphery = periphery,
         .incoming_telemetry = system_telemetry.incoming,
     }};
 
@@ -51,31 +57,32 @@ void kf::main(kf::Init &init) {
 
     // config
 
-    system_config.init();
+    system_config.setup(init.arena, console);
 
     // hardware
 
-    system_hardware.init();
+    (void) periphery.init();
 
     // telemetry
 
-    system_telemetry.init();
+    system_telemetry.setup(init.arena, console);
 
     system_telemetry.outgoing.wheel_distance.callback([]() -> botix::OutgoingTelemetry::WheelDistance {
         return {
-            .left_mm = system_hardware.periphery.wheel_odometry_encoder_left.positionUnits(),
-            .right_mm = system_hardware.periphery.wheel_odometry_encoder_right.positionUnits(),
+            .left_mm = periphery.wheel_odometry_encoder_left.positionUnits(),
+            .right_mm = periphery.wheel_odometry_encoder_right.positionUnits(),
         };
     });
 
     // transport
 
-    system_transport.init(system_config.user.init_transport_kind);
+    system_transport.setup(init.arena, console);
 
-    system_transport.onReceive([](auto const &context) -> void {
+    system_transport.onReceive([&maybe_other_channel](auto const &context) -> void {
         system_protocol.link.receive({
             .transport = context,
             .incoming_telemetry = system_telemetry.incoming,
+            .cli_channel_input = maybe_other_channel.unwrap().input,
             .timestamp = kf::rtos::Clock::now(),
         });
     });
@@ -95,7 +102,7 @@ void kf::main(kf::Init &init) {
 
     // protocol
 
-    system_protocol.init(system_config.user.init_protocol_kind);
+    system_protocol.setup(init.arena, console);
 
     system_protocol.onRawFallback([&init](botix::transport::Address const &address, auto buffer) -> void {
         (void) address;
@@ -109,59 +116,37 @@ void kf::main(kf::Init &init) {
 
     // behavior
 
-    system_behavior.init();
+    system_behavior.setup(init.arena, console);
 
     init.logger.info("Ready");
 
     // loop
 
-    // TODO: CLI system
-    auto const on_input_char = [&init](char c) -> void {
-        switch (c) {
-            case 'o': {
-                init.logger.debug(
-                    "Encoders: \tL: {} \t R: {}",
-                    system_telemetry.outgoing.wheel_distance.value().left_mm,
-                    system_telemetry.outgoing.wheel_distance.value().right_mm);
-                return;
-            }
-
-            case 'r': {
-                system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Raw));
-                system_config.user.init_protocol_kind = botix::protocol::Kind::Raw;
-                init.logger.debug("protocol: Raw");
-                return;
-            }
-
-            case 'm': {
-                system_protocol.link.set(system_protocol.get(botix::protocol::Kind::Mavlink));
-                system_config.user.init_protocol_kind = botix::protocol::Kind::Mavlink;
-                init.logger.debug("protocol: Mavlink");
-                return;
-            }
-        }
-    };
-
     while (true) {
         constexpr auto loop_period{1000 / 100};
+
+        if (maybe_main_channel.isSome()) {
+
+            while (init.io.availableForRead() > 0) {
+                if (auto const read = init.io.readByte(); read.isOk()) {
+                    (void) maybe_main_channel.unwrap().input.feed({reinterpret_cast<char const *>(&read.ok()), 1});
+                }
+            }
+
+            if (maybe_main_channel.unwrap().output.availableForRead() > 0) {
+                auto const str = maybe_main_channel.unwrap().output.drain();
+                (void) init.io.writeBuffer({reinterpret_cast<kf::u8 const *>(str.data()), str.length()});
+            }
+        }
 
         auto const now = rtos::Clock::now();
 
         system_telemetry.poll(now);
         system_transport.poll(now);
         system_protocol.poll(now);
+        console.poll(now);
         system_behavior.poll(now);
         system_config.poll(now);
-        system_hardware.poll(now);
-
-        // TODO: CLI poll
-        {
-            while (init.io.availableForRead() > 0) {
-                if (auto const read = init.io.readPacket<char>(); read.isOk()) {
-                    on_input_char(read.ok());
-                }
-            }
-        }
 
         rtos::Task::sleep(loop_period);
     }
