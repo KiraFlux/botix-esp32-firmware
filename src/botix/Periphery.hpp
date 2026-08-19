@@ -46,7 +46,8 @@ struct Periphery :
 
         // sensors
 
-        WheelOdometerEncoder::Config wheel_odometry_encoder;
+        WheelOdometerEncoder::Config wheel_odometry_encoder_left;
+        WheelOdometerEncoder::Config wheel_odometry_encoder_right;
 
     private:
         KF_IMPL_RESETTABLE(Config);
@@ -68,8 +69,10 @@ struct Periphery :
 
             // sensors
 
-            wheel_odometry_encoder.units_per_tick = 1;
-            wheel_odometry_encoder.pull = kf::gpio::DigitalInput::Pull::External;
+            wheel_odometry_encoder_left.units_per_tick = -1;
+            wheel_odometry_encoder_left.pull = kf::gpio::DigitalInput::Pull::External;
+            wheel_odometry_encoder_right.units_per_tick = 1;
+            wheel_odometry_encoder_right.pull = kf::gpio::DigitalInput::Pull::External;
         }
     };
 
@@ -116,13 +119,13 @@ struct Periphery :
     // wheel odometry encoders
 
     WheelOdometerEncoder wheel_odometry_encoder_left{
-        config.wheel_odometry_encoder,
+        config.wheel_odometry_encoder_left,
         kf::gpio::G36,
         kf::gpio::G39,
     };
 
     WheelOdometerEncoder wheel_odometry_encoder_right{
-        config.wheel_odometry_encoder,
+        config.wheel_odometry_encoder_right,
         kf::gpio::G34,
         kf::gpio::G35,
     };

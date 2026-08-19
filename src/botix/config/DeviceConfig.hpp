@@ -16,7 +16,7 @@ namespace botix::config {
 ///       member config. Size alone does not catch it: this struct is 8-byte
 ///       aligned, so a new field can hide in trailing padding and let a stale
 ///       blob load at shifted offsets.
-struct DeviceConfig : Config<DeviceConfig, 2> {
+struct DeviceConfig : Config<DeviceConfig, 3> {
 
     Periphery::Config periphery;
 

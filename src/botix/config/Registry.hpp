@@ -139,10 +139,21 @@ private:
         BOTIX_FIELD(DeviceConfig, "servo.pwm_bits", periphery.servo.pwm.resolution_bits, Kind::Unsigned, kf::u8),
 
         // periphery / encoders
-        BOTIX_FIELD(DeviceConfig, "encoder.mm_per_tick", periphery.wheel_odometry_encoder.units_per_tick, Kind::Real, kf::f64),
+        BOTIX_FIELD(DeviceConfig, "encoder.left_mm_per_tick", periphery.wheel_odometry_encoder_left.units_per_tick, Kind::Real, kf::f64),
+        BOTIX_FIELD(DeviceConfig, "encoder.right_mm_per_tick", periphery.wheel_odometry_encoder_right.units_per_tick, Kind::Real, kf::f64),
         Field{
             .path = "encoder.pull",
-            .offset = BOTIX_CONFIG_OFFSET(DeviceConfig, periphery.wheel_odometry_encoder.pull),
+            .offset = BOTIX_CONFIG_OFFSET(DeviceConfig, periphery.wheel_odometry_encoder_left.pull),
+            .size = sizeof(kf::gpio::DigitalInput::Pull),
+            .kind = Kind::Enumerated,
+            .secret = false,
+            .options = {encoder_pull_options},
+            .min = kf::none,
+            .max = kf::none,
+        },
+        Field{
+            .path = "encoder.right_pull",
+            .offset = BOTIX_CONFIG_OFFSET(DeviceConfig, periphery.wheel_odometry_encoder_right.pull),
             .size = sizeof(kf::gpio::DigitalInput::Pull),
             .kind = Kind::Enumerated,
             .secret = false,

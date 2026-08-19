@@ -102,10 +102,7 @@ struct OutgoingTelemetry :
     struct WheelDistance {
         kf::f64 left_mm, right_mm;
 
-        /// @brief Raw encoder counts behind the same sample
-        /// @note Odometry integrates these rather than the millimetres: they are
-        ///       exact integers, so a wheel that creeps back and forth cannot
-        ///       accumulate conversion error.
+        /// @brief Raw encoder counts behind the same sample, for diagnostics
         kf::i32 left_ticks, right_ticks;
     };
 
