@@ -24,20 +24,35 @@ void kf::main(kf::Init &init) {
 
     auto &channel = maybe_channel.unwrap();
 
-    auto maybe_namespace = console.addGroup(init.arena, {.name = "transport"});
+    auto maybe_group = console.addGroup(init.arena, {.name = "transport"});
 
-    auto maybe_command = maybe_namespace.unwrap().addCommand(
+    botix::cli::Argument kek_arguments[]{
+        {
+            {.name{"a"}},
+            botix::cli::Argument::Integer{
+                .params{.default_value{123}},
+                .min_value{-100},
+                .max_value{200},
+            },
+        },
+        {{.name{"boo"}},
+         botix::cli::Argument::Boolean{
+             .params{.default_value{false}},
+         }},
+    };
+
+    auto maybe_command = maybe_group.unwrap().addCommand(
         init.arena,
         {
             .name = "kek",
             .description = "do important stuff",
             .shortcut = kf::some('e'),
         },
+        kek_arguments,
         [&init](botix::cli::Command::Context const &context) {
-            auto const e = context.arguments[0]->enumValue<botix::transport::Kind>();
-            auto const flag = context.arguments[1]->boolean();
+            auto const e = context.arguments[0].integer();
 
-            context.channel.output.print("cmd:'{}': {} {}", context.channel.input_line, e, flag);
+            context.channel.output.print("cmd:'{}': {}", context.channel.input_line, e);
         });
 
     if (maybe_command.isNone()) {
@@ -47,14 +62,10 @@ void kf::main(kf::Init &init) {
 
     auto &command = maybe_command.unwrap();
 
-    botix::cli::Argument::EnumItem const transports[]{
+    botix::cli::Argument::Enum::Item const transports[]{
         {{.name = "espnow", .description{"use ESPNOW transport"}}, botix::transport::Kind::Espnow},
         {{.name = "wifi", .description{"this option has no shortcut"}, .shortcut = kf::none}, botix::transport::Kind::Wifi},
     };
-
-    (void) command.addEnumArgument(init.arena, {.name = "transport", .description{"select transport"}}, {.items{transports}});
-
-    (void) command.addBooleanArgument(init.arena, {.name = "my_flag"}, {.params{.default_value = kf::some(true)}});
 
     init.logger.debug("arena available: {}", init.arena.available());
 

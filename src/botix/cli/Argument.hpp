@@ -12,31 +12,33 @@
 #include <kf/mixin/ReprTo.hpp>
 #include <kf/mixin/Resettable.hpp>
 
+#include "botix/Parser.hpp"
+
 #include "botix/cli/Channel.hpp"
 #include "botix/cli/Identifier.hpp"
 
 namespace botix::internal {
 
-template<typename T> struct ValueItem;
+template<typename T> struct ArgumentValueItem;
 
-template<typename T> struct ValueItemBase :
+template<typename T> struct ArgumentValueItemBase :
 
     cli::Identifier,
-    kf::mixin::ReprTo<ValueItemBase<T>>
+    kf::mixin::ReprTo<ArgumentValueItemBase<T>>
 
 {
 private:
-    KF_IMPL_REPR_TO(ValueItemBase<T>);
+    KF_IMPL_REPR_TO(ArgumentValueItemBase<T>);
     constexpr kf::usize reprToImpl(auto &char_writable) const noexcept {
         return char_writable.append(this->name);
     }
 };
 
-template<kf::trivial T> struct ValueItem<T> : ValueItemBase<T> {
+template<kf::trivial T> struct ArgumentValueItem<T> : ArgumentValueItemBase<T> {
     using ValueType = T;
 
-    constexpr ValueItem(cli::Identifier id, ValueType value) noexcept :
-        ValueItemBase<T>{id}, _value{value} {}
+    constexpr ArgumentValueItem(cli::Identifier id, ValueType value) noexcept :
+        ArgumentValueItemBase<T>{id}, _value{value} {}
 
     [[nodiscard]] constexpr T value() const noexcept {
         return _value;
@@ -46,11 +48,11 @@ private:
     ValueType _value;
 };
 
-template<> struct ValueItem<kf::StringView> : ValueItemBase<kf::StringView> {
+template<> struct ArgumentValueItem<kf::StringView> : ArgumentValueItemBase<kf::StringView> {
     using ValueType = kf::StringView;
 
-    constexpr ValueItem(cli::Identifier id) noexcept :
-        ValueItemBase<kf::StringView>{id} {}
+    constexpr ArgumentValueItem(cli::Identifier id) noexcept :
+        ArgumentValueItemBase<kf::StringView>{id} {}
 
     [[nodiscard]] constexpr kf::StringView value() const noexcept {
         return this->name;
@@ -59,6 +61,7 @@ template<> struct ValueItem<kf::StringView> : ValueItemBase<kf::StringView> {
 
 struct ArgumentBase {
 
+protected:
     struct ParseContext {
         cli::Channel::Output &channel_output;
         kf::StringView lexeme;// not empty
@@ -72,6 +75,7 @@ struct ArgumentBase {
         }
     };
 
+private:
     // TODO: make as kf::mixin::Parsable<Impl, InputType, OutputType> static interface
     template<typename Impl> struct Parsable {
         [[nodiscard]] constexpr bool parse(ParseContext const &context) noexcept {
@@ -79,7 +83,6 @@ struct ArgumentBase {
         }
     };
 
-    // TODO: rename to one thing (no ..s)
     template<kf::trivial T> struct Parameters : kf::mixin::Resettable<Parameters<T>> {
         T value{};
         kf::Option<T> default_value;
@@ -98,25 +101,92 @@ struct ArgumentBase {
             ParametersType{params} {}
     };
 
-    struct EnumItem : ValueItem<kf::usize> {
+    template<kf::arithmetic T> struct NumberParameters {
+
+        using ValueType = T;
+
+        Parameters<T> params;
+        kf::Option<T> min_value, max_value;
+    };
+
+    template<typename T> struct NumberValue : Value<NumberValue<T>, T> {
+
+        using Value<NumberValue, T>::Value;
+
+    private:
+        friend struct Parsable<NumberValue<T>>;
+        constexpr bool parseImpl(ParseContext const &context) noexcept {
+            Parser<typename T::ValueType> parser{};
+            auto const maybe_number = parser.parse(context.lexeme);
+
+            if (maybe_number.isNone()) {
+                context.channel_output.error("'{}' cannot be interpreted as number", context.lexeme);
+                return false;
+            }
+
+            if (this->min_value.isSome() and maybe_number.unwrap() < this->min_value.unwrap()) {
+                context.channel_output.error("'{}' is lower than minimal value ({})", context.lexeme, this->min_value.unwrap());
+                return false;
+            }
+
+            if (this->max_value.isSome() and maybe_number.unwrap() > this->max_value.unwrap()) {
+                context.channel_output.error("'{}' is higher than maximal value ({})", context.lexeme, this->max_value.unwrap());
+                return false;
+            }
+
+            this->params.value = maybe_number.unwrap();
+            return true;
+        }
+    };
+
+    struct EnumItem : ArgumentValueItem<kf::usize> {
 
         constexpr EnumItem(Identifier id, kf::enum_type auto value) noexcept :
-            ValueItem<kf::usize>{id, static_cast<kf::usize>(value)} {
+            ArgumentValueItem<kf::usize>{id, static_cast<kf::usize>(value)} {
             static_assert(sizeof(value) <= sizeof(kf::usize));
         }
     };
 
-    struct EnumParameters {
-        Parameters<EnumItem::ValueType> params;
-        kf::Slice<EnumItem const> items;
+    using BooleanItem = ArgumentValueItem<bool>;
+
+    using StringItem = ArgumentValueItem<kf::StringView>;
+
+public:
+    using Integer = NumberParameters<kf::i32>;
+
+    using Real = NumberParameters<kf::f32>;
+
+    struct Enum {
+
+        using Item = EnumItem;
+
+        Parameters<Item::ValueType> params;
+        kf::Slice<Item const> items;
     };
 
-    struct Enum : Value<Enum, EnumParameters> {
+    struct Boolean {
+        Parameters<BooleanItem::ValueType> params;
+    };
 
-        using Value<Enum, EnumParameters>::Value;
+    struct String {
+
+        using Item = StringItem;
+
+        Parameters<kf::StringView> params;
+        kf::Slice<Item const> options;// constraint disabled if empty
+    };
+
+protected:
+    using IntegerValue = NumberValue<Integer>;
+
+    using RealValue = NumberValue<Real>;
+
+    struct EnumValue : Value<EnumValue, Enum> {
+
+        using Value<EnumValue, Enum>::Value;
 
     private:
-        friend struct Parsable<Enum>;
+        friend struct Parsable<EnumValue>;
         constexpr bool parseImpl(ParseContext const &context) noexcept {
             if (auto maybe_item = context.parseEnumerated(items); maybe_item.isSome()) {
                 this->params.value = maybe_item.unwrap().value();
@@ -126,18 +196,12 @@ struct ArgumentBase {
         }
     };
 
-    using BooleanItem = ValueItem<bool>;
+    struct BooleanValue : Value<BooleanValue, Boolean> {
 
-    struct BooleanParameters {
-        Parameters<BooleanItem::ValueType> params;
-    };
-
-    struct Boolean : Value<Boolean, BooleanParameters> {
-
-        using Value<Boolean, BooleanParameters>::Value;
+        using Value<BooleanValue, Boolean>::Value;
 
     private:
-        friend struct Parsable<Boolean>;
+        friend struct Parsable<BooleanValue>;
         constexpr bool parseImpl(ParseContext const &context) noexcept {
 
             BooleanItem const items[4]{
@@ -156,48 +220,12 @@ struct ArgumentBase {
         }
     };
 
-    template<kf::arithmetic T> struct NumberParameters {
-        Parameters<T> params;
-        kf::Option<T> min_value, max_value;
-    };
+    struct StringValue : Value<StringValue, String> {
 
-    using IntegerParameters = NumberParameters<kf::i32>;
-
-    struct Integer : Value<Integer, IntegerParameters> {
-
-        using Value<Integer, IntegerParameters>::Value;
+        using Value<StringValue, String>::Value;
 
     private:
-        friend struct Parsable<Integer>;
-        constexpr bool parseImpl(ParseContext const &context) noexcept {
-            return false;// TODO: impl
-        }
-    };
-
-    using RealParameters = NumberParameters<kf::f32>;
-
-    struct Real : Value<Real, RealParameters> {
-
-        using Value<Real, RealParameters>::Value;
-
-    private:
-        friend struct Parsable<Real>;
-        constexpr bool parseImpl(ParseContext const &context) noexcept {
-            return false;// TODO: impl
-        }
-    };
-
-    struct StringParameters {
-        Parameters<kf::StringView> params;
-        kf::Slice<ValueItem<kf::StringView> const> options;// constraint disabled if empty
-    };
-
-    struct String : Value<String, StringParameters> {
-
-        using Value<String, StringParameters>::Value;
-
-    private:
-        friend struct Parsable<String>;
+        friend struct Parsable<StringValue>;
         constexpr bool parseImpl(ParseContext const &context) noexcept {
             if (not this->options.empty()) {
                 if (auto maybe_item = context.parseEnumerated(options); maybe_item.isSome()) {
@@ -234,24 +262,24 @@ struct Argument :
         Boolean,
         Integer,
         Real,
-        String,// TODO: add IPv4
+        String,// TODO: add IPv4, Mac
     };
 
     // construct
 
-    explicit constexpr Argument(Identifier id, EnumParameters params) noexcept :
+    constexpr Argument(Identifier id, Enum params) noexcept :
         Identifier{id}, _enum{params}, _kind{Kind::Enum} {}
 
-    explicit constexpr Argument(Identifier id, BooleanParameters params) noexcept :
+    constexpr Argument(Identifier id, Boolean params) noexcept :
         Identifier{id}, _boolean{params}, _kind{Kind::Boolean} {}
 
-    explicit constexpr Argument(Identifier id, IntegerParameters params) noexcept :
+    constexpr Argument(Identifier id, Integer params) noexcept :
         Identifier{id}, _integer{params}, _kind{Kind::Integer} {}
 
-    explicit constexpr Argument(Identifier id, RealParameters params) noexcept :
+    constexpr Argument(Identifier id, Real params) noexcept :
         Identifier{id}, _real{params}, _kind{Kind::Real} {}
 
-    explicit constexpr Argument(Identifier id, StringParameters params) noexcept :
+    constexpr Argument(Identifier id, String params) noexcept :
         Identifier{id}, _string{params}, _kind{Kind::String} {}
 
     // get
@@ -265,7 +293,7 @@ struct Argument :
     }
 
     [[nodiscard]] constexpr auto enumName() const noexcept {
-        return _enum.items[enumIndex()].name;
+        return _enum.items[enumIndex()].name;// TODO: return firstWhere same name
     }
 
     [[nodiscard]] constexpr auto boolean() const noexcept {
@@ -317,11 +345,11 @@ struct Argument :
 
 private:
     union {
-        Enum _enum;
-        Boolean _boolean;
-        Integer _integer;
-        Real _real;
-        String _string;
+        EnumValue _enum;
+        BooleanValue _boolean;
+        IntegerValue _integer;
+        RealValue _real;
+        StringValue _string;
     };
 
     Kind _kind;
@@ -381,7 +409,9 @@ private:
         write_count += this->reprType(char_writable);
 
         if (has_default) {
+            write_count += char_writable.append(' ');
             write_count += char_writable.append('=');
+            write_count += char_writable.append(' ');
             write_count += reprDefault(char_writable);
         }
 

@@ -7,31 +7,31 @@
 
 #include <kf/Arena.hpp>
 #include <kf/Registry.hpp>
+#include <kf/Slice.hpp>
 #include <kf/StringView.hpp>
 #include <kf/core.hpp>
 
-#include <kf/mixin/Configured.hpp>
 #include <kf/mixin/ExtraAllocationLength.hpp>
 #include <kf/mixin/NonCopyable.hpp>
 
+#include "botix/cli/Argument.hpp"
 #include "botix/cli/Command.hpp"
 #include "botix/cli/Config.hpp"
 #include "botix/cli/Identifier.hpp"
 
 namespace botix::cli {
 
+// TODO: just make owns a slice with command (no runtime registration)
 struct Group :
 
     Identifier,
     private kf::Registry<Command>,
     kf::mixin::NonCopyable,
-    kf::mixin::Configured<Config>,
     kf::mixin::ExtraAllocationLength<Group>
 
 {
 
     explicit constexpr Group(kf::Arena &arena, Config const &config, Identifier id) noexcept :
-        kf::mixin::Configured<Config>{config},
         Identifier{id},
         kf::Registry<Command>{arena, config.max_command_count} {}
 
@@ -51,8 +51,8 @@ struct Group :
         return this->get(name_or_shortcut);
     }
 
-    [[nodiscard]] auto addCommand(kf::Arena &arena, Identifier id, auto &&handler) noexcept {
-        return this->add(arena, this->config(), std::move(id), std::forward<decltype(handler)>(handler));
+    [[nodiscard]] auto addCommand(kf::Arena &arena, Identifier id, kf::Slice<Argument> arguments, auto &&handler) noexcept {
+        return this->add(arena, std::move(id), std::move(arguments), std::forward<decltype(handler)>(handler));
     }
 
 private:

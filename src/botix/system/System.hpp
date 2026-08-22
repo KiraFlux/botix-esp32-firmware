@@ -33,6 +33,8 @@ template<typename Impl> struct System :
         if (auto maybe_group = console.addGroup(arena, _id); maybe_group.isSome()) {
             static_cast<Impl *>(this)->setupCliImpl(arena, maybe_group.unwrap());
         }
+
+        this->_logger.info("setup completed");
     }
 
 private:

@@ -46,14 +46,14 @@ using ConsoleGroupRegistryBase = kf::Registry<cli::Group>;
 
 template<typename Impl> struct ConsoleGroupRegistry : private ConsoleGroupRegistryBase {
 
-    explicit ConsoleGroupRegistry(kf::Arena &arena, kf::usize max_namespace_count) noexcept :
-        ConsoleGroupRegistryBase{arena, max_namespace_count} {
+    explicit ConsoleGroupRegistry(kf::Arena &arena, kf::usize max_group_count) noexcept :
+        ConsoleGroupRegistryBase{arena, max_group_count} {
         // caller ensure
         (void) this->addGroup(
             arena,
             {
                 .name{"global"},
-                .description{"common commands"},
+                .description{"Common commands. Prefix is optional."},
                 .shortcut{kf::none},
             });
 
@@ -61,53 +61,47 @@ template<typename Impl> struct ConsoleGroupRegistry : private ConsoleGroupRegist
             arena,
             {
                 .name{"help"},
-                .description{"show help about command or namespace"},
+                .description{"Show help about command or group."},
             },
+            help_command_arguments,
             [this](cli::Command::Context const &context) -> void {
                 auto &output = context.channel.output;
-                auto const target = context.arguments[0]->string();
+                auto const target = context.arguments[0].string();
 
                 if (auto const &maybe_command = this->resolveCommand(target); maybe_command.isSome()) {
                     writeCommandHelp(output.string, maybe_command.unwrap(), false);
                     return;
                 }
 
-                if (auto const &maybe_namespace = this->getGroup(target); maybe_namespace.isSome()) {
-                    writeGroupHelp(output.string, maybe_namespace.unwrap());
+                if (auto const &maybe_group = this->getGroup(target); maybe_group.isSome()) {
+                    writeGroupHelp(output.string, maybe_group.unwrap());
                     return;
                 }
 
                 if (not target.empty()) {
-                    output.error("'{}' is not a valid namespace or command.", target);
+                    output.error("'{}' is not a valid group or command.", target);
                 }
 
-                for (auto const ns: this->namespaces()) {
+                for (auto const ns: this->groups()) {
                     writeGroupHelp(output.string, *ns);
                 }
             });
-
-        (void) should_be_command.unwrap().addStringArgument(
-            arena,
-            {.name = "target"},
-            {
-                .params{.default_value{""}},
-            });
     }
 
-    [[nodiscard]] decltype(auto) namespaces() noexcept {
+    [[nodiscard]] decltype(auto) groups() noexcept {
         return this->items();
     }
 
-    [[nodiscard]] decltype(auto) namespaces() const noexcept {
+    [[nodiscard]] decltype(auto) groups() const noexcept {
         return this->items();
     }
 
     [[nodiscard]] decltype(auto) globalGroup() noexcept {
-        return *namespaces()[0];
+        return *groups()[0];
     }
 
     [[nodiscard]] decltype(auto) globalGroup() const noexcept {
-        return *namespaces()[0];
+        return *groups()[0];
     }
 
     [[nodiscard]] decltype(auto) getGroup(kf::StringView name_or_shortcut) noexcept {
@@ -131,10 +125,10 @@ template<typename Impl> struct ConsoleGroupRegistry : private ConsoleGroupRegist
 
         auto const delimeter_index = maybe_delimeter_index.unwrap();
 
-        auto maybe_namespace = getGroup(path.first(delimeter_index));
-        if (maybe_namespace.isNone()) { return kf::none; }
+        auto maybe_group = getGroup(path.first(delimeter_index));
+        if (maybe_group.isNone()) { return kf::none; }
 
-        return maybe_namespace.unwrap().getCommand(path.fromOffset(delimeter_index + 1));
+        return maybe_group.unwrap().getCommand(path.fromOffset(delimeter_index + 1));
     }
 
 protected:
@@ -168,27 +162,40 @@ protected:
         (void) char_writable.append('\n');
     }
 
-    void writeGroupHelp(auto &char_writable, cli::Group const &space) const noexcept {
+    void writeGroupHelp(auto &char_writable, cli::Group const &group) const noexcept {
         (void) char_writable.append("\nGroup:\n  ");
-        (void) char_writable.append(space.name);
+        (void) char_writable.append(group.name);
 
-        if (space.shortcut.isSome()) {
+        if (group.shortcut.isSome()) {
             (void) char_writable.append('/');
-            (void) char_writable.append(space.shortcut.unwrap());
+            (void) char_writable.append(group.shortcut.unwrap());
         }
 
-        if (not space.description.empty()) {
+        if (not group.description.empty()) {
             (void) char_writable.append(" - ");
-            (void) char_writable.append(space.description);
+            (void) char_writable.append(group.description);
         }
 
         (void) char_writable.append("\nCommands:\n");
 
-        for (auto const c: space.commands()) {
-            (void) char_writable.appendFormat("  {}.", space.name);
+        for (auto const c: group.commands()) {
+            (void) char_writable.appendFormat("  {}.", group.name);
             writeCommandHelp(char_writable, *c, true);
         }
     }
+
+private:
+    cli::Argument help_command_arguments[1]{
+        {
+            {
+                .name{"target"},
+                .description{"resolvable name"},
+            },
+            cli::Argument::String{
+                .params{.default_value{""}},
+            },
+        },
+    };
 };
 
 }// namespace botix::internal
@@ -209,9 +216,11 @@ struct Console final :
     explicit Console(kf::Arena &arena, Config const &config) noexcept :
         kf::mixin::Configured<Config>{config},
         internal::ChannelRegistry<Console>{arena, config.max_channel_count},
-        internal::ConsoleGroupRegistry<Console>{arena, config.max_namespace_count} {}
+        internal::ConsoleGroupRegistry<Console>{arena, config.max_group_count} {}
 
 private:
+    static constexpr kf::usize max_tokens_count{8};
+
     kf::Logger _logger{"Console"};
 
     void onInputLineReady(Channel::Context const &channel_context) noexcept {
@@ -219,9 +228,9 @@ private:
             channel_context.output.print("[#{}]>>> {}", channel_context.num, channel_context.input_line);
         }
 
-        kf::StringView tokens_buffer[this->config().max_command_argument_count]{};
+        kf::StringView tokens_buffer[max_tokens_count]{};
 
-        auto tokens = channel_context.input_line.trim().split({tokens_buffer, this->config().max_command_argument_count});
+        auto tokens = channel_context.input_line.trim().split({tokens_buffer});
 
         if (tokens.empty()) {
             return;
@@ -248,11 +257,11 @@ private:
         bool parse_failed = false;
         while (argument_index < argument_tokens.length()) {
             auto lexeme = argument_tokens[argument_index];
-            auto argument = command.arguments()[argument_index];
+            auto &argument = command.arguments()[argument_index];
 
-            if (not argument->parse({.channel_output = channel_context.output, .lexeme = lexeme})) {
+            if (not argument.parse({.channel_output = channel_context.output, .lexeme = lexeme})) {
                 parse_failed = true;
-                channel_context.output.print("note: failed argument '{}'", argument->name);
+                channel_context.output.print("note: failed argument '{}'", argument.name);
             }
 
             argument_index += 1;
@@ -265,8 +274,8 @@ private:
         }
 
         auto default_value_arguments = command.arguments().fromOffset(argument_index);
-        for (auto a: default_value_arguments) {
-            a->reset();
+        for (auto &a: default_value_arguments) {
+            a.reset();
         }
 
         command.execute(channel_context);
@@ -303,7 +312,7 @@ private:
 
     KF_IMPL_EXTRA_ALLOCATION_LENGTH(Console);
     static constexpr auto getExtraAllocationLengthImpl(Config const &config) noexcept {
-        return static_cast<kf::usize>(config.max_channel_count * sizeof(Channel) + config.max_namespace_count * sizeof(Group));
+        return static_cast<kf::usize>(config.max_channel_count * sizeof(Channel) + config.max_group_count * sizeof(Group));
     }
 };
 

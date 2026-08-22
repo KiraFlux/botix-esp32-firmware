@@ -55,7 +55,7 @@ struct ProtocolSystem : System<ProtocolSystem> {
     }
 
 private:
-    static constexpr cli::Argument::EnumItem protocol_kind_options[2]{
+    static constexpr cli::Argument::Enum::Item protocol_kind_options[2]{
         {{.name{"raw"}}, protocol::Kind::Raw},
         {{.name{"mavlink"}}, protocol::Kind::Mavlink},
     };
@@ -69,24 +69,32 @@ public:
     protocol::Link link;
 
 private:
+    cli::Argument set_command_arguments[1]{
+        {
+            {.name{"kind"}},
+            cli::Argument::Enum{
+                .items{protocol_kind_options},
+            },
+        },
+    };
+
     BOTIX_IMPL_SYSTEM(ProtocolSystem);
 
     void onSetupImpl() noexcept {}
 
     void setupCliImpl(kf::Arena &arena, cli::Group &group) noexcept {
-        auto maybe_set = group.addCommand(
+        (void) group.addCommand(
             arena,
             {.name = "set"},
+            set_command_arguments,
             [this](cli::Command::Context const &context) -> void {
-                auto const kind = context.arguments[0]->enumValue<protocol::Kind>();
-                auto const kind_name = context.arguments[0]->enumName();
-                auto const index = context.arguments[0]->enumIndex();
+                auto const kind = context.arguments[0].enumValue<protocol::Kind>();
+                auto const kind_name = context.arguments[0].enumName();
+                auto const index = context.arguments[0].enumIndex();
+
                 link.set(_registry.get(kind));
                 context.channel.output.print("set {} protocol (index: {}, kind: {})", kind_name, index, static_cast<int>(kind));
             });
-        if (maybe_set.isSome()) {
-            (void) maybe_set.unwrap().addEnumArgument(arena, {.name = "kind"}, {.items{protocol_kind_options}});
-        }
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {

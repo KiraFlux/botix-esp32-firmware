@@ -13,14 +13,13 @@ struct Config : kf::mixin::DefaultResettable<Config> {
 
     kf::u8
         max_channel_count{0x08},
-        max_namespace_count{0x10},
-        max_command_count{0x10},
-        max_command_argument_count{0x08};
+        max_group_count{0x10},
+        max_command_count{0x10};
 
     kf::u16
         channel_input_queue_length{0x02'00},
         channel_input_line_length{0x00'80},
-        channel_output_line_length{0x02'00},
+        channel_output_line_length{0x10'00},
         help_command_description_position{60};
 };
 
