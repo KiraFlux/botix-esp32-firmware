@@ -81,21 +81,21 @@ public:
 private:
     config::Registry::ValueField _registry_value_fields[19]{
         // periphery: motor actuator driver (4)
-        {"periphery.motor_driver.pwm_frequency_hz", device.periphery.motor_driver.pwm.frequency_hz},
-        {"periphery.motor_driver.pwm_resolution_bits", device.periphery.motor_driver.pwm.resolution_bits},
-        {"periphery.motor_driver.max_input", device.periphery.motor_driver.max_input},
-        {"periphery.motor_driver.duty_dead_zone", device.periphery.motor_driver.duty_dead_zone},
+        {"motor.pwm_hz", device.periphery.motor_driver.pwm.frequency_hz},
+        {"motor.pwm_bits", device.periphery.motor_driver.pwm.resolution_bits},
+        {"motor.max_input", device.periphery.motor_driver.max_input},
+        {"motor.dead_zone", device.periphery.motor_driver.duty_dead_zone},
 
         // periphery: servo actuator driver (6)
-        {"periphery.servo_driver.pwm_frequency_hz", device.periphery.servo.pwm.frequency_hz},
-        {"periphery.servo_driver.pwm_resolution_bits", device.periphery.servo.pwm.resolution_bits},
-        {"periphery.servo_driver.angle_range_start", device.periphery.servo.angle_range.start},
-        {"periphery.servo_driver.angle_range_end", device.periphery.servo.angle_range.end},
-        {"periphery.servo_driver.pulse_range_start", device.periphery.servo.pulse_range.start},
-        {"periphery.servo_driver.pulse_range_end", device.periphery.servo.pulse_range.end},
+        {"servo.pwm_hz", device.periphery.servo.pwm.frequency_hz},
+        {"servo.pwm_bits", device.periphery.servo.pwm.resolution_bits},
+        {"servo.angle_min", device.periphery.servo.angle_range.start},
+        {"servo.angle_max", device.periphery.servo.angle_range.end},
+        {"servo.pulse_min", device.periphery.servo.pulse_range.start},
+        {"servo.pulse_max", device.periphery.servo.pulse_range.end},
 
         // periphery: wheel encoder sensor driver (1)
-        {"periphery.wheel_encoder.mm_per_tick", device.periphery.wheel_odometry_encoder.units_per_tick},
+        {"wheel_encoder.mm_per_tick", device.periphery.wheel_odometry_encoder.units_per_tick},
 
         // components: cli (1)
         {"cli.help_command_description_position", device.cli.help_command_description_position},
@@ -109,9 +109,9 @@ private:
         {"protocol.mavlink.heartbeat_period_ms", device.protocol_registry.mavlink.heartbeat_timer.value},
 
         // services: mixer (3)
-        {"service.mixer.max_control_age_ms", device.mixer_service.max_control_input_age_ms},
-        {"service.mixer.left_sign", device.mixer_service.motor_left_sign},
-        {"service.mixer.right_sign", device.mixer_service.motor_right_sign},
+        {"mixer.max_age_ms", device.mixer_service.max_control_input_age_ms},
+        {"mixer.left_sign", device.mixer_service.motor_left_sign},
+        {"mixer.right_sign", device.mixer_service.motor_right_sign},
     };
 
     config::Registry::EnumField::Entry const _registry_mixer_service_mode[2]{
@@ -130,7 +130,7 @@ private:
     };
 
     config::Registry::EnumField _registry_enum_fields[3]{
-        {"service.mixer.mode", device.mixer_service.mode, _registry_mixer_service_mode},
+        {"mixer.mode", device.mixer_service.mode, _registry_mixer_service_mode},
         {"transport.default", user.init_transport_kind, _registry_transport_entries},
         {"protocol.default", user.init_protocol_kind, _registry_protocol_entries},
     };
