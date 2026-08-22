@@ -18,7 +18,7 @@ namespace botix::internal {
 
 struct MixerServiceConfig : kf::mixin::DefaultResettable<MixerServiceConfig> {
 
-    kf::usize max_control_input_age_ms{100};
+    kf::units::Milliseconds max_control_input_age_ms{100};
 
     enum class Mode : kf::u8 {
         Direct = 0x00,

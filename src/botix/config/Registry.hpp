@@ -18,7 +18,7 @@
 
 namespace botix::internal {
 
-enum class FieldKind : kf::u8 {
+enum class TypeKind : kf::u8 {
 
     // integers
 
@@ -42,15 +42,30 @@ enum class FieldKind : kf::u8 {
     Char,
 };
 
-template<typename Impl> struct Field :
+template<typename T> struct type_kind_of {
+    static_assert(not sizeof(T), "unsupported type");
+};
 
-    kf::mixin::NonCopyable,
-    kf::mixin::ReprTo<Field<Impl>>
+template<> struct type_kind_of<kf::i8> : std::integral_constant<TypeKind, TypeKind::I8> {};
+template<> struct type_kind_of<kf::u8> : std::integral_constant<TypeKind, TypeKind::U8> {};
+template<> struct type_kind_of<kf::i16> : std::integral_constant<TypeKind, TypeKind::I16> {};
+template<> struct type_kind_of<kf::u16> : std::integral_constant<TypeKind, TypeKind::U16> {};
+template<> struct type_kind_of<kf::i32> : std::integral_constant<TypeKind, TypeKind::I32> {};
+template<> struct type_kind_of<kf::u32> : std::integral_constant<TypeKind, TypeKind::U32> {};
+template<> struct type_kind_of<kf::i64> : std::integral_constant<TypeKind, TypeKind::I64> {};
+template<> struct type_kind_of<kf::u64> : std::integral_constant<TypeKind, TypeKind::U64> {};
+template<> struct type_kind_of<kf::f32> : std::integral_constant<TypeKind, TypeKind::F32> {};
+template<> struct type_kind_of<kf::f64> : std::integral_constant<TypeKind, TypeKind::F64> {};
+template<> struct type_kind_of<bool> : std::integral_constant<TypeKind, TypeKind::Boolean> {};
+template<> struct type_kind_of<char> : std::integral_constant<TypeKind, TypeKind::Char> {};
+
+template<typename T> constexpr auto type_kind_of_v = type_kind_of<std::decay_t<T>>::value;
+
+template<typename Impl> struct FieldBase :
+
+    kf::mixin::NonCopyable
 
 {
-
-    constexpr Field(kf::StringView name) noexcept :
-        name{name} {}
 
     [[nodiscard]] bool set(kf::StringView lexeme) noexcept {
         return static_cast<Impl *>(this)->setImpl(lexeme);
@@ -63,238 +78,272 @@ template<typename Impl> struct Field :
     [[nodiscard]] constexpr kf::usize reprType(auto &char_writable) const noexcept {
         return static_cast<Impl const *>(this)->reprTypeImpl(char_writable);
     }
+};
 
-    kf::StringView const name;
+struct ValueField : FieldBase<ValueField> {
+
+    template<typename T> constexpr ValueField(T &value) noexcept :
+        _ptr{static_cast<void *>(&value)},
+        _length{kf::none},
+        _type_kind{type_kind_of_v<T>} {}
+
+    template<typename T, kf::usize N> constexpr ValueField(T (&array)[N]) noexcept :
+        _ptr{static_cast<void *>(array)},
+        _length{N},
+        _type_kind{type_kind_of_v<T>} {}
 
 private:
-    KF_IMPL_REPR_TO(::botix::internal::Field<Impl>);
-    constexpr kf::usize reprToImpl(auto &char_writable) const noexcept {
-        return (
-            char_writable.append(name) +
-            char_writable.append(':') +
-            char_writable.append(' ') +
-            reprType(char_writable) +
-            char_writable.append(' ') +
-            char_writable.append('=') +
-            char_writable.append(' ') +
-            reprValue(char_writable));
+    void *const _ptr;
+    kf::Option<kf::usize> const _length;
+    TypeKind const _type_kind;
+
+    template<typename T> [[nodiscard]] constexpr bool setFrom(kf::StringView lexeme) const noexcept {
+        if (_length.isNone()) {
+            Parser<T> parser{};
+
+            if (auto const parsed_value = parser.parse(lexeme); parsed_value.isSome()) {
+                *static_cast<T *>(_ptr) = parsed_value.unwrap();
+                return true;
+            }
+
+            return false;
+        } else {
+
+            if (TypeKind::Char == _type_kind) {
+
+                for (kf::usize i = 0; i < lexeme.length() and i < _length.unwrap(); i += 1) {
+                    static_cast<char *>(_ptr)[i] = lexeme[i];
+                }
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    [[nodiscard]] constexpr kf::StringView kindName() const noexcept {
+        switch (_type_kind) {
+            case TypeKind::I8: return "i8";
+            case TypeKind::U8: return "u8";
+            case TypeKind::I16: return "i16";
+            case TypeKind::U16: return "u16";
+            case TypeKind::I32: return "i32";
+            case TypeKind::U32: return "u32";
+            case TypeKind::I64: return "i64";
+            case TypeKind::U64: return "u64";
+            case TypeKind::F32: return "f32";
+            case TypeKind::F64: return "f64";
+            case TypeKind::Boolean: return "bool";
+            case TypeKind::Char: return "char";
+            default: return "?";
+        }
+    }
+
+    template<typename T> [[nodiscard]] constexpr kf::usize reprValueTo(auto &char_writable) const noexcept {
+        if (_length.isNone()) {
+            return char_writable.append(*static_cast<T *>(_ptr));
+        } else {
+            return char_writable.append(kf::Slice<T>{
+                static_cast<T *>(_ptr),
+                _length.unwrap(),
+            });
+        }
+    }
+
+    // impl for internal::Field
+    friend struct ::botix::internal::FieldBase<ValueField>;
+
+    bool setImpl(kf::StringView lexeme) noexcept {
+        switch (_type_kind) {
+            case TypeKind::I8: return setFrom<kf::i8>(lexeme);
+            case TypeKind::U8: return setFrom<kf::u8>(lexeme);
+            case TypeKind::I16: return setFrom<kf::i16>(lexeme);
+            case TypeKind::U16: return setFrom<kf::u16>(lexeme);
+            case TypeKind::I32: return setFrom<kf::i32>(lexeme);
+            case TypeKind::U32: return setFrom<kf::u32>(lexeme);
+            case TypeKind::I64: return setFrom<kf::i64>(lexeme);
+            case TypeKind::U64: return setFrom<kf::u64>(lexeme);
+            case TypeKind::F32: return setFrom<kf::f32>(lexeme);
+            case TypeKind::F64: return setFrom<kf::f64>(lexeme);
+            case TypeKind::Boolean: return setFrom<bool>(lexeme);
+            case TypeKind::Char: return setFrom<char>(lexeme);
+            default: return false;
+        }
+    }
+
+    constexpr kf::usize reprTypeImpl(auto &char_writable) const noexcept {
+        kf::usize written = char_writable.append(kindName());
+
+        if (_length.isSome()) {
+            written += char_writable.append('[');
+            written += char_writable.append(_length.unwrap());
+            written += char_writable.append(']');
+        }
+
+        return written;
+    }
+
+    constexpr kf::usize reprValueImpl(auto &char_writable) const noexcept {
+        switch (_type_kind) {
+            case TypeKind::I8: return reprValueTo<kf::i8>(char_writable);
+            case TypeKind::U8: return reprValueTo<kf::u8>(char_writable);
+            case TypeKind::I16: return reprValueTo<kf::i16>(char_writable);
+            case TypeKind::U16: return reprValueTo<kf::u16>(char_writable);
+            case TypeKind::I32: return reprValueTo<kf::i32>(char_writable);
+            case TypeKind::U32: return reprValueTo<kf::u32>(char_writable);
+            case TypeKind::I64: return reprValueTo<kf::i64>(char_writable);
+            case TypeKind::U64: return reprValueTo<kf::u64>(char_writable);
+            case TypeKind::F32: return reprValueTo<kf::f32>(char_writable);
+            case TypeKind::F64: return reprValueTo<kf::f64>(char_writable);
+            case TypeKind::Boolean: return reprValueTo<bool>(char_writable);
+            case TypeKind::Char: return reprValueTo<char>(char_writable);
+            default: return char_writable.append('?');
+        }
     }
 };
 
-template<typename T> struct field_kind_by_type;
+struct EnumField : internal::FieldBase<EnumField> {
 
-template<> struct field_kind_by_type<kf::i8> : std::integral_constant<FieldKind, FieldKind::I8> {};
-template<> struct field_kind_by_type<kf::u8> : std::integral_constant<FieldKind, FieldKind::U8> {};
-template<> struct field_kind_by_type<kf::i16> : std::integral_constant<FieldKind, FieldKind::I16> {};
-template<> struct field_kind_by_type<kf::u16> : std::integral_constant<FieldKind, FieldKind::U16> {};
-template<> struct field_kind_by_type<kf::i32> : std::integral_constant<FieldKind, FieldKind::I32> {};
-template<> struct field_kind_by_type<kf::u32> : std::integral_constant<FieldKind, FieldKind::U32> {};
-template<> struct field_kind_by_type<kf::i64> : std::integral_constant<FieldKind, FieldKind::I64> {};
-template<> struct field_kind_by_type<kf::u64> : std::integral_constant<FieldKind, FieldKind::U64> {};
-template<> struct field_kind_by_type<kf::f32> : std::integral_constant<FieldKind, FieldKind::F32> {};
-template<> struct field_kind_by_type<kf::f64> : std::integral_constant<FieldKind, FieldKind::F64> {};
-template<> struct field_kind_by_type<bool> : std::integral_constant<FieldKind, FieldKind::Boolean> {};
-template<> struct field_kind_by_type<char> : std::integral_constant<FieldKind, FieldKind::Char> {};
+    using Underlying = kf::u8;
 
-template<> struct field_kind_by_type<kf::usize> : std::integral_constant<FieldKind, (4 == sizeof(kf::usize) ? FieldKind::U32 : FieldKind::U64)> {};
+    struct Item {
+
+        constexpr Item(kf::StringView key, kf::enum_type auto value) noexcept :
+            key{key}, value{static_cast<Underlying>(value)} {}
+
+        kf::StringView key;
+        Underlying value;
+    };
+
+    using ItemCollection = kf::Slice<Item const>;
+
+    template<kf::enum_type T> constexpr EnumField(T &value, ItemCollection items) noexcept :
+        _value{reinterpret_cast<Underlying &>(value)}, _items{items} {
+        static_assert(sizeof(Underlying) == sizeof(T));
+    }
+
+private:
+    Underlying &_value;
+    ItemCollection _items;
+
+    // impl for internal::Field
+    friend struct ::botix::internal::FieldBase<EnumField>;
+
+    bool setImpl(kf::StringView target_key) noexcept {
+        for (auto const &e: _items) {
+            if (e.key == target_key) {
+                _value = e.value;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    constexpr kf::usize reprTypeImpl(auto &char_writable) const noexcept {
+        kf::usize written = 0;
+
+        bool write_delimeter = false;
+
+        for (auto const &e: _items) {
+            if (write_delimeter) {
+                written += char_writable.append('|');
+            }
+            write_delimeter = true;
+            written += char_writable.append(e.key);
+        }
+
+        return written;
+    }
+
+    constexpr kf::usize reprValueImpl(auto &char_writable) const noexcept {
+        for (auto const &e: _items) {
+            if (e.value == _value) {
+                return char_writable.append(e.key);
+            }
+        }
+
+        return char_writable.append('?');
+    }
+};
 
 }// namespace botix::internal
 
 namespace botix::config {
 
-struct Registry
+struct Registry :
 
-// : kf::mixin::NonCopyable
+    kf::mixin::NonCopyable
 
 {
 
-    struct ValueField : internal::Field<ValueField> {
+    using EnumItem = internal::EnumField::Item;
 
-        using Kind = internal::FieldKind;
+    struct Field :
 
-        template<typename T> constexpr ValueField(kf::StringView name, T &value) noexcept :
-            internal::Field<ValueField>{name},
-            _ptr{static_cast<void *>(&value)},
-            _length{kf::none},
-            _kind{internal::field_kind_by_type<std::decay_t<T>>::value} {}
+        internal::FieldBase<Field>,
+        kf::mixin::ReprTo<Field>
 
-        template<typename T, kf::usize N> constexpr ValueField(kf::StringView name, T (&array)[N]) noexcept :
-            internal::Field<ValueField>{name},
-            _ptr{static_cast<void *>(array)},
-            _length{N},
-            _kind{internal::field_kind_by_type<std::decay_t<T>>::value} {}
+    {
+
+        enum class Kind : kf::u8 {
+            Value,
+            Enum,
+        };
+
+        constexpr Field(kf::StringView name, auto &value) noexcept :
+            name{name}, _value{value}, _kind{Kind::Value} {}
+
+        constexpr Field(kf::StringView name, kf::enum_type auto &value, kf::Slice<EnumItem const> items) noexcept :
+            name{name}, _enum{value, items}, _kind{Kind::Enum} {}
+
+        kf::StringView const name;
 
     private:
-        void *const _ptr;
-        kf::Option<kf::usize> const _length;
-        Kind const _kind;
+        union {
+            internal::ValueField _value;
+            internal::EnumField _enum;
+        };
 
-        template<typename T> [[nodiscard]] constexpr bool setFrom(kf::StringView lexeme) const noexcept {
-            if (_length.isNone()) {
-                Parser<T> parser{};
-
-                if (auto const parsed_value = parser.parse(lexeme); parsed_value.isSome()) {
-                    *static_cast<T *>(_ptr) = parsed_value.unwrap();
-                    return true;
-                }
-
-                return false;
-            } else {
-
-                if (Kind::Char == _kind) {
-
-                    for (kf::usize i = 0; i < lexeme.length() and i < _length.unwrap(); i += 1) {
-                        static_cast<char *>(_ptr)[i] = lexeme[i];
-                    }
-                    return true;
-                }
-
-                return false;
-            }
-        }
-
-        [[nodiscard]] constexpr kf::StringView kindName() const noexcept {
-            switch (_kind) {
-                case Kind::I8: return "i8";
-                case Kind::U8: return "u8";
-                case Kind::I16: return "i16";
-                case Kind::U16: return "u16";
-                case Kind::I32: return "i32";
-                case Kind::U32: return "u32";
-                case Kind::I64: return "i64";
-                case Kind::U64: return "u64";
-                case Kind::F32: return "f32";
-                case Kind::F64: return "f64";
-                case Kind::Boolean: return "bool";
-                case Kind::Char: return "char";
-                default: return "?";
-            }
-        }
-
-        template<typename T> [[nodiscard]] constexpr kf::usize reprValueTo(auto &char_writable) const noexcept {
-            if (_length.isNone()) {
-                return char_writable.append(*static_cast<T *>(_ptr));
-            } else {
-                return char_writable.append(kf::Slice<T>{
-                    static_cast<T *>(_ptr),
-                    _length.unwrap(),
-                });
-            }
-        }
+        Kind _kind;
 
         // impl for internal::Field
-        friend struct ::botix::internal::Field<ValueField>;
+        friend struct ::botix::internal::FieldBase<Field>;
 
-        bool setImpl(kf::StringView lexeme) noexcept {
+        bool setImpl(kf::StringView target_key) noexcept {
             switch (_kind) {
-                case Kind::I8: return setFrom<kf::i8>(lexeme);
-                case Kind::U8: return setFrom<kf::u8>(lexeme);
-                case Kind::I16: return setFrom<kf::i16>(lexeme);
-                case Kind::U16: return setFrom<kf::u16>(lexeme);
-                case Kind::I32: return setFrom<kf::i32>(lexeme);
-                case Kind::U32: return setFrom<kf::u32>(lexeme);
-                case Kind::I64: return setFrom<kf::i64>(lexeme);
-                case Kind::U64: return setFrom<kf::u64>(lexeme);
-                case Kind::F32: return setFrom<kf::f32>(lexeme);
-                case Kind::F64: return setFrom<kf::f64>(lexeme);
-                case Kind::Boolean: return setFrom<bool>(lexeme);
-                case Kind::Char: return setFrom<char>(lexeme);
+                case Kind::Value: return _value.set(target_key);
+                case Kind::Enum: return _enum.set(target_key);
                 default: return false;
             }
         }
 
         constexpr kf::usize reprTypeImpl(auto &char_writable) const noexcept {
-            kf::usize written = char_writable.append(kindName());
-
-            if (_length.isSome()) {
-                written += char_writable.append('[');
-                written += char_writable.append(_length.unwrap());
-                written += char_writable.append(']');
+            switch (_kind) {
+                case Kind::Value: return _value.reprType(char_writable);
+                case Kind::Enum: return _enum.reprType(char_writable);
+                default: return 0;
             }
-
-            return written;
         }
 
         constexpr kf::usize reprValueImpl(auto &char_writable) const noexcept {
             switch (_kind) {
-                case Kind::I8: return reprValueTo<kf::i8>(char_writable);
-                case Kind::U8: return reprValueTo<kf::u8>(char_writable);
-                case Kind::I16: return reprValueTo<kf::i16>(char_writable);
-                case Kind::U16: return reprValueTo<kf::u16>(char_writable);
-                case Kind::I32: return reprValueTo<kf::i32>(char_writable);
-                case Kind::U32: return reprValueTo<kf::u32>(char_writable);
-                case Kind::I64: return reprValueTo<kf::i64>(char_writable);
-                case Kind::U64: return reprValueTo<kf::u64>(char_writable);
-                case Kind::F32: return reprValueTo<kf::f32>(char_writable);
-                case Kind::F64: return reprValueTo<kf::f64>(char_writable);
-                case Kind::Boolean: return reprValueTo<bool>(char_writable);
-                case Kind::Char: return reprValueTo<char>(char_writable);
-                default: return char_writable.append('?');
+                case Kind::Value: return _value.reprValue(char_writable);
+                case Kind::Enum: return _enum.reprValue(char_writable);
+                default: return 0;
             }
         }
-    };
 
-    struct EnumField : internal::Field<EnumField> {
-
-        using Underlying = kf::u8;
-
-        struct Entry {
-
-            constexpr Entry(kf::StringView key, kf::enum_type auto value) noexcept :
-                key{key}, value{static_cast<Underlying>(value)} {}
-
-            kf::StringView key;
-            Underlying value;
-        };
-
-        using EntryCollection = kf::Slice<Entry const>;
-
-        template<kf::enum_type T> constexpr EnumField(kf::StringView name, T &value, EntryCollection entries) noexcept :
-            internal::Field<EnumField>{name}, value{reinterpret_cast<Underlying &>(value)}, entries{entries} {
-            static_assert(sizeof(Underlying) == sizeof(T));
-        }
-
-    private:
-        Underlying &value;
-        EntryCollection entries;
-
-        // impl for internal::Field
-        friend struct ::botix::internal::Field<EnumField>;
-
-        bool setImpl(kf::StringView target_key) noexcept {
-            for (auto const &e: entries) {
-                if (e.key == target_key) {
-                    value = e.value;
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        constexpr kf::usize reprTypeImpl(auto &char_writable) const noexcept {
-            kf::usize written = 0;
-
-            bool write_delimeter = false;
-
-            for (auto const &e: entries) {
-                if (write_delimeter) {
-                    written += char_writable.append('|');
-                }
-                write_delimeter = true;
-                written += char_writable.append(e.key);
-            }
-
-            return written;
-        }
-
-        constexpr kf::usize reprValueImpl(auto &char_writable) const noexcept {
-            for (auto const &e: entries) {
-                if (e.value == value) {
-                    return char_writable.append(e.key);
-                }
-            }
-
-            return char_writable.append('?');
+        KF_IMPL_REPR_TO(Field);
+        constexpr kf::usize reprToImpl(auto &char_writable) const noexcept {
+            return (
+                char_writable.append(name) +
+                char_writable.append(':') +
+                char_writable.append(' ') +
+                reprType(char_writable) +
+                char_writable.append(' ') +
+                char_writable.append('=') +
+                char_writable.append(' ') +
+                reprValue(char_writable));
         }
     };
 
@@ -302,44 +351,34 @@ struct Registry
         kf::StringView message;
     };
 
-    [[nodiscard]] auto findValueField(kf::StringView name) noexcept {
-        return findField(value_fields, name);
+    explicit constexpr Registry(kf::Slice<Field> fields) noexcept :
+        _fields{fields} {}
+
+    [[nodiscard]] auto all() noexcept {
+        return _fields;
     }
 
-    [[nodiscard]] auto findEnumField(kf::StringView name) noexcept {
-        return findField(enum_fields, name);
+    [[nodiscard]] auto get(kf::StringView name) noexcept {
+        return _fields.firstWhere([name](auto const &field) {
+            return field.name == name;
+        });
     }
 
     [[nodiscard]] auto set(kf::StringView name, kf::StringView lexeme) noexcept -> kf::Result<void, Error> {
 
-        if (auto field = findValueField(name); field.isSome()) {
+        if (auto field = get(name); field.isSome()) {
             if (field.unwrap().set(lexeme)) {
                 return kf::ok();
             } else {
-                return kf::error(Error{.message{"value parsing failed"}});
-            }
-        }
-
-        if (auto field = findEnumField(name); field.isSome()) {
-            if (field.unwrap().set(lexeme)) {
-                return kf::ok();
-            } else {
-                return kf::error(Error{.message{"enum option not found"}});
+                return kf::error(Error{.message{"parsing failed"}});
             }
         }
 
         return kf::error(Error{.message{"field not found"}});
     }
 
-    kf::Slice<ValueField> value_fields;
-    kf::Slice<EnumField> enum_fields;
-
 private:
-    template<typename T> [[nodiscard]] static auto findField(kf::Slice<T> fields, kf::StringView name) noexcept -> kf::Option<T &> {
-        return fields.firstWhere([name](auto const &field) {
-            return field.name == name;
-        });
-    }
+    kf::Slice<Field> _fields;
 };
 
 }// namespace botix::config

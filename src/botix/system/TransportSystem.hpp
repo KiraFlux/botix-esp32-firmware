@@ -24,12 +24,12 @@ namespace botix::system {
 struct TransportSystem : System<TransportSystem> {
 
     struct Dependencies {
-        transport::Kind init_transport_kind;
+        transport::Kind boot_transport_kind;
     };
 
     explicit constexpr TransportSystem(Dependencies deps) noexcept :
         System<TransportSystem>{{.name{"transport"}}},
-        link{_registry.get(deps.init_transport_kind)} {}
+        link{_registry.get(deps.boot_transport_kind)} {}
 
     [[nodiscard]] auto &get(transport::Kind kind) noexcept {
         return _registry.get(kind);

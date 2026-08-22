@@ -30,11 +30,16 @@ struct SomeConfig {
 };
 
 void kf::main(kf::Init &init) {
-    init.logger.debug("config registry example");
+    init.logger.debug("config registry example {}", f32{2.01});
 
     SomeConfig config{};
 
-    botix::config::Registry::ValueField value_fields[]{
+    botix::config::Registry::EnumItem const modes[2]{
+        {"tank", SomeConfig::Mode::Tank},
+        {"direct", SomeConfig::Mode::Direct},
+    };
+
+    botix::config::Registry::Field fields[]{
         {"a8", config.a8},
         {"a16", config.a16},
         {"a32", config.a32},
@@ -46,28 +51,13 @@ void kf::main(kf::Init &init) {
         {"hostname", config.hostname},
         {"wifi_enabled", config.wifi_enabled},
         {"magic", config.magic_char},
-    };
-
-    botix::config::Registry::EnumField::Entry const modes[]{
-        {"tank", SomeConfig::Mode::Tank},
-        {"direct", SomeConfig::Mode::Direct},
-    };
-
-    botix::config::Registry::EnumField enum_fields[]{
         {"mode", config.mode, modes},
     };
 
-    botix::config::Registry config_registry{
-        .value_fields{value_fields},
-        .enum_fields{enum_fields},
-    };
+    botix::config::Registry config_registry{fields};
 
     auto const show_registry = [&init, &config_registry]() -> void {
-        for (auto const &field: config_registry.value_fields) {
-            init.logger.debug("{}", field);
-        }
-
-        for (auto const &field: config_registry.enum_fields) {
+        for (auto const &field: config_registry.all()) {
             init.logger.debug("{}", field);
         }
     };

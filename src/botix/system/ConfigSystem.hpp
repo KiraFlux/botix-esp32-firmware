@@ -79,14 +79,50 @@ public:
     }};
 
 private:
-    config::Registry::ValueField _registry_value_fields[19]{
-        // periphery: motor actuator driver (4)
+    config::Registry::EnumItem const _registry_mixer_service_mode[2]{
+        {"direct", service::MixerService::Config::Mode::Direct},
+        {"tank", service::MixerService::Config::Mode::Tank},
+    };
+
+    config::Registry::EnumItem const _registry_transport_entries[2]{
+        {"espnow", transport::Kind::Espnow},
+        {"wifi", transport::Kind::Wifi},
+    };
+
+    config::Registry::EnumItem const _registry_protocol_entries[2]{
+        {"raw", protocol::Kind::Raw},
+        {"mavlink", protocol::Kind::Mavlink},
+    };
+
+    config::Registry::Field _registry_fields[22]{
+        // user: (2)
+        {"user.boot.transport", user.boot_transport_kind, _registry_transport_entries},
+        {"user.boot.protocol", user.boot_protocol_kind, _registry_protocol_entries},
+
+        // services: mixer (3)
+        {"mixer.mode", device.mixer_service.mode, _registry_mixer_service_mode},
+        {"mixer.max_age_ms", device.mixer_service.max_control_input_age_ms},
+        {"mixer.left_sign", device.mixer_service.motor_left_sign},
+        {"mixer.right_sign", device.mixer_service.motor_right_sign},
+
+        // telemetry: (3)
+        {"telemetry.wheel_distance.enabled", device.outgoing_telemetry.wheel_distance.enabled},
+        {"telemetry.wheel_distance.period_ms", device.outgoing_telemetry.wheel_distance.timer.value},
+        {"telemetry.wheel_distance.ahead_ms", device.outgoing_telemetry.wheel_distance.update_ahead_ms},
+
+        // protocol: (1)
+        {"protocol.mavlink.heartbeat_period_ms", device.protocol_registry.mavlink.heartbeat_timer.value},
+
+        // periphery: wheel_encoder (1)
+        {"wheel_encoder.mm_per_tick", device.periphery.wheel_odometry_encoder.units_per_tick},
+
+        // periphery: motor (4)
         {"motor.pwm_hz", device.periphery.motor_driver.pwm.frequency_hz},
         {"motor.pwm_bits", device.periphery.motor_driver.pwm.resolution_bits},
         {"motor.max_input", device.periphery.motor_driver.max_input},
         {"motor.dead_zone", device.periphery.motor_driver.duty_dead_zone},
 
-        // periphery: servo actuator driver (6)
+        // periphery: servo (6)
         {"servo.pwm_hz", device.periphery.servo.pwm.frequency_hz},
         {"servo.pwm_bits", device.periphery.servo.pwm.resolution_bits},
         {"servo.angle_min", device.periphery.servo.angle_range.start},
@@ -94,65 +130,27 @@ private:
         {"servo.pulse_min", device.periphery.servo.pulse_range.start},
         {"servo.pulse_max", device.periphery.servo.pulse_range.end},
 
-        // periphery: wheel encoder sensor driver (1)
-        {"wheel_encoder.mm_per_tick", device.periphery.wheel_odometry_encoder.units_per_tick},
-
-        // components: cli (1)
+        // cli (1)
         {"cli.help_command_description_position", device.cli.help_command_description_position},
-
-        // components: outgoing telemetry (3)
-        {"telemetry.wheel_distance.enabled", device.outgoing_telemetry.wheel_distance.enabled},
-        {"telemetry.wheel_distance.period_ms", device.outgoing_telemetry.wheel_distance.timer.value},
-        {"telemetry.wheel_distance.ahead_ms", device.outgoing_telemetry.wheel_distance.update_ahead_ms},
-
-        // protocol: mavlink (1)
-        {"protocol.mavlink.heartbeat_period_ms", device.protocol_registry.mavlink.heartbeat_timer.value},
-
-        // services: mixer (3)
-        {"mixer.max_age_ms", device.mixer_service.max_control_input_age_ms},
-        {"mixer.left_sign", device.mixer_service.motor_left_sign},
-        {"mixer.right_sign", device.mixer_service.motor_right_sign},
     };
 
-    config::Registry::EnumField::Entry const _registry_mixer_service_mode[2]{
-        {"direct", service::MixerService::Config::Mode::Direct},
-        {"tank", service::MixerService::Config::Mode::Tank},
+    config::Registry _registry{_registry_fields};
+
+    enum class ServiceKind {
+        Device,
+        User,
     };
 
-    config::Registry::EnumField::Entry const _registry_transport_entries[2]{
-        {"espnow", transport::Kind::Espnow},
-        {"wifi", transport::Kind::Wifi},
+    cli::Argument::Enum::Item const config_service_kinds[2]{
+        {{.name{"device"}}, ServiceKind::Device},
+        {{.name{"user"}}, ServiceKind::User},
     };
 
-    config::Registry::EnumField::Entry const _registry_protocol_entries[2]{
-        {"raw", protocol::Kind::Raw},
-        {"mavlink", protocol::Kind::Mavlink},
-    };
-
-    config::Registry::EnumField _registry_enum_fields[3]{
-        {"mixer.mode", device.mixer_service.mode, _registry_mixer_service_mode},
-        {"transport.default", user.init_transport_kind, _registry_transport_entries},
-        {"protocol.default", user.init_protocol_kind, _registry_protocol_entries},
-    };
-
-    config::Registry _registry{
-        .value_fields{_registry_value_fields},
-        .enum_fields{_registry_enum_fields},
-    };
-
-    // TODO: replace with enum
-    cli::Argument::String::Item const sync_command_service_argument_options[3]{
-        {{.name{"all"}, .shortcut{kf::none}}},
-        {{.name{"device"}}},
-        {{.name{"user"}}},
-    };
-
-    cli::Argument sync_command_arguments[1]{
+    cli::Argument service_related_command_arguments[1]{
         {
-            {.name{"service"}},
-            cli::Argument::String{
-                .params{.default_value{"all"}},
-                .options{sync_command_service_argument_options},
+            {.name{"target_service"}},
+            cli::Argument::Enum{
+                .items{config_service_kinds},
             },
         },
     };
@@ -170,6 +168,17 @@ private:
         },
     };
 
+    [[nodiscard]] constexpr service::ConfigService &getService(ServiceKind kind) noexcept {
+        switch (kind) {
+            case ServiceKind::User:
+                return user_service;
+
+            case ServiceKind::Device:
+            default:
+                return device_service;
+        }
+    }
+
     BOTIX_IMPL_SYSTEM(ConfigSystem);
 
     void onSetupImpl() noexcept {
@@ -182,31 +191,28 @@ private:
     }
 
     void setupCliImpl(kf::Arena &arena, cli::Group &group) noexcept {
-
-        (void) group.addCommand(arena, {.name{"sync"}}, sync_command_arguments, [this](cli::Command::Context const &context) -> void {
-            auto const target = context.arguments[0].string();
-
-            if (target == "all" or target == "device") {
-                device_service.sync();
-            }
-
-            if (target == "all" or target == "user") {
-                user_service.sync();
-            }
-
-            context.channel.output.print("sync requested for {} service(s)", target);
-        });
-
         (void) group.addCommand(arena, {.name{"list"}}, {}, [this](cli::Command::Context const &context) -> void {
             context.channel.output.print("Available fields:");
 
-            for (auto const &entry: _registry.value_fields) {
+            for (auto const &entry: _registry.all()) {
                 context.channel.output.print("{}", entry);
             }
+        });
 
-            for (auto const &entry: _registry.enum_fields) {
-                context.channel.output.print("{}", entry);
-            }
+        (void) group.addCommand(arena, {.name{"sync"}}, service_related_command_arguments, [this](cli::Command::Context const &context) -> void {
+            auto const target_kind = context.arguments[0].enumValue<ServiceKind>();
+            auto const target_name = context.arguments[0].enumName();
+
+            getService(target_kind).sync();
+            context.channel.output.print("sync completed for '{}' service", target_name);
+        });
+
+        (void) group.addCommand(arena, {.name{"reset"}}, service_related_command_arguments, [this](cli::Command::Context const &context) -> void {
+            auto const target_kind = context.arguments[0].enumValue<ServiceKind>();
+            auto const target_name = context.arguments[0].enumName();
+
+            context.channel.output.print("reset requested for '{}' service", target_name);
+            getService(target_kind).requestReset();
         });
 
         (void) group.addCommand(arena, {.name{"field"}}, field_command_arguments, [this](cli::Command::Context const &context) -> void {
@@ -226,20 +232,13 @@ private:
 
             // get
 
-            if (auto field = _registry.findValueField(path); field.isSome()) {
-                context.channel.output.print("{}", field.unwrap());
-                return;
-            }
-
-            if (auto field = _registry.findEnumField(path); field.isSome()) {
+            if (auto field = _registry.get(path); field.isSome()) {
                 context.channel.output.print("{}", field.unwrap());
                 return;
             }
 
             context.channel.output.error("field '{}' not found", path);
         });
-
-        // TODO: reset command
     }
 
     void pollImpl(kf::units::Milliseconds now) noexcept {

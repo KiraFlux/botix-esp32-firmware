@@ -36,7 +36,7 @@ void kf::main(kf::Init &init) {
     }};
 
     static botix::system::TransportSystem system_transport{{
-        .init_transport_kind = system_config.user.init_transport_kind,
+        .boot_transport_kind = system_config.user.boot_transport_kind,
     }};
 
     static botix::system::ProtocolSystem system_protocol{{
@@ -44,7 +44,7 @@ void kf::main(kf::Init &init) {
         .transport_link = system_transport.link,
         .outgoing_telemetry = system_telemetry.outgoing,
         .cli_channel_output = maybe_other_channel.unwrap().output,
-        .init_protocol_kind = system_config.user.init_protocol_kind,
+        .boot_protocol_kind = system_config.user.boot_protocol_kind,
     }};
 
     static botix::system::BehaviorSystem system_behavior{{

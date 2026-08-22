@@ -31,7 +31,7 @@ struct ProtocolSystem : System<ProtocolSystem> {
         transport::Link &transport_link;
         OutgoingTelemetry &outgoing_telemetry;
         cli::Channel::Output &cli_channel_output;
-        protocol::Kind init_protocol_kind;
+        protocol::Kind boot_protocol_kind;
     };
 
     explicit constexpr ProtocolSystem(Dependencies deps) noexcept :
@@ -40,7 +40,7 @@ struct ProtocolSystem : System<ProtocolSystem> {
         _transport_link{deps.transport_link},
         _outgoing_telemetry{deps.outgoing_telemetry},
         _cli_channel_output{deps.cli_channel_output},
-        link{_registry.get(deps.init_protocol_kind)} {}
+        link{_registry.get(deps.boot_protocol_kind)} {}
 
     [[nodiscard]] auto &get(protocol::Kind kind) noexcept {
         return _registry.get(kind);

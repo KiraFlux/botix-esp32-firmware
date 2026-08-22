@@ -12,8 +12,8 @@ namespace botix::config {
 
 struct UserConfig : Config<UserConfig, 0> {
 
-    transport::Kind init_transport_kind{transport::Kind::Espnow};
-    protocol::Kind init_protocol_kind{protocol::Kind::Mavlink};
+    transport::Kind boot_transport_kind{transport::Kind::Espnow};
+    protocol::Kind boot_protocol_kind{protocol::Kind::Mavlink};
 };
 
 }// namespace botix::config

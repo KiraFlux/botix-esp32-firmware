@@ -149,8 +149,6 @@ private:
 
     using BooleanItem = ArgumentValueItem<bool>;
 
-    using StringItem = ArgumentValueItem<kf::StringView>;
-
 public:
     using Integer = NumberParameters<kf::i32>;
 
@@ -169,11 +167,7 @@ public:
     };
 
     struct String {
-
-        using Item = StringItem;
-
         Parameters<kf::StringView> params;
-        kf::Slice<Item const> options;// constraint disabled if empty
     };
 
 protected:
@@ -227,15 +221,6 @@ protected:
     private:
         friend struct Parsable<StringValue>;
         constexpr bool parseImpl(ParseContext const &context) noexcept {
-            if (not this->options.empty()) {
-                if (auto maybe_item = context.parseEnumerated(options); maybe_item.isSome()) {
-                    this->params.value = maybe_item.unwrap().name;
-                    return true;
-                }
-
-                return false;
-            }
-
             this->params.value = context.lexeme;
             return true;
         }
@@ -373,12 +358,7 @@ private:
             case Kind::Boolean: return char_writable.append("bool");
             case Kind::Integer: return char_writable.append("int");
             case Kind::Real: return char_writable.append("float");
-            case Kind::String:
-                if (_string.options.empty()) {
-                    return char_writable.append("str");
-                } else {
-                    return reprList(char_writable, _string.options);
-                }
+            case Kind::String: return char_writable.append("str");
         }
         return 0;
     }
